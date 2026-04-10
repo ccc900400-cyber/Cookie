@@ -43,3 +43,29 @@ Cookie 是一款集成式 AI 应用，旨在通过先进的语言模型简化复
 - 权限问题：本应用已移除麦克风等敏感权限请求，确保用户隐私。
 - 响应超时：若遇到网络波动，系统内置了自动重试机制（最多 3 次）。
 - 文件限制：单个文件建议不超过 100MB 以获得最佳解析效果。
+
+6. Android 打包重复类冲突解决 (Duplicate Classes)
+
+如果在打包过程中遇到 checkDebugDuplicateClasses 错误，说明项目中存在重复的依赖类。请参考以下步骤解决：
+
+6.1 启用 Jetifier
+由于部分旧插件仍在使用 Android Support 库，需要使用 Jetifier 将其转换为 AndroidX：
+- 安装：npm install jetifier
+- 运行：npx jetifier
+
+6.2 清理 Gradle 缓存
+进入 android 目录并执行清理操作：
+- 命令：cd android && ./gradlew clean
+- 同步：npx cap sync android
+
+6.3 强制统一依赖版本
+如果发现特定的库冲突，可以在 android/app/build.gradle 文件的末尾添加以下配置：
+configurations.all {
+    resolutionStrategy {
+        failOnVersionConflict() 
+    }
+}
+
+6.4 检查版本管理
+确保 android/variables.gradle 中的版本号保持最新且一致。
+

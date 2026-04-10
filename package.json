@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
+    "jetify": "jetifier",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit"
   },
@@ -45,6 +46,7 @@
     "@types/node": "^22.14.0",
     "@vitejs/plugin-legacy": "^8.0.1",
     "autoprefixer": "^10.4.21",
+    "jetifier": "^2.0.0",
     "tailwindcss": "^4.1.14",
     "terser": "^5.46.1",
     "tsx": "^4.21.0",
