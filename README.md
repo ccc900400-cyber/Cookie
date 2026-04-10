@@ -6,35 +6,6 @@ Cookie - 多模态智能分析与对话平台
 
 Cookie 是一个基于 Google Gemini 3 Flash 模型构建的高性能多模态分析平台。它采用双 Agent 架构，提供深度文件解析、视频链接分析以及通用的知识问答服务。
 
-详细项目结构
-
-/
-├── components/             UI 组件库
-│   └── ui/                 基础 UI 组件
-├── lib/                    公共工具库
-├── src/                    源代码目录
-│   ├── components/         业务组件
-│   │   ├── agents/         核心 Agent 模块
-│   │   │   ├── AnalysisAgent.tsx  千析模块实现
-│   │   │   └── QAAgent.tsx        百闻模块实现
-│   │   └── SettingsPanel.tsx      系统设置面板
-│   ├── lib/                前端工具类
-│   │   ├── i18n.ts         国际化配置
-│   │   └── utils.ts        通用工具函数
-│   ├── services/           后端服务对接
-│   │   ├── geminiService.ts       Gemini API 对接
-│   │   └── storageService.ts      IndexedDB 存储逻辑
-│   ├── App.tsx             应用主入口
-│   ├── index.css           全局样式与 Tailwind 配置
-│   ├── main.tsx            React 渲染入口
-│   └── types.ts            TypeScript 类型定义
-├── index.html              HTML 模板
-├── metadata.json           应用元数据配置
-├── package.json            项目依赖与脚本
-├── postcss.config.js       PostCSS 插件配置
-├── tsconfig.json           TypeScript 编译配置
-└── vite.config.ts          Vite 构建与兼容性配置
-
 核心功能
 
 1. 千析 (Analysis Agent)
@@ -51,15 +22,45 @@ Cookie 是一个基于 Google Gemini 3 Flash 模型构建的高性能多模态�
 
 技术栈
 
-- 前端框架：React 19
-- 构建工具：Vite 6
-- 样式处理：Tailwind CSS 3.4
-- 动画库：Motion
+- 前端框架：React 18
+- 构建工具：Vite
+- 样式处理：Tailwind CSS
+- 动画库：Motion (framer-motion)
 - 图标库：Lucide React
 - AI 模型：Google Gemini 3 Flash
-- 数据持久化：IndexedDB
+- 数据持久化：IndexedDB (通过自定义存储服务)
 
-快速开始
+## 项目结构
+
+```text
+.
+├── components/             # shadcn/ui 基础组件
+│   └── ui/                 # 原子级 UI 组件 (Button, Input, etc.)
+├── lib/                    # 核心库与工具函数
+│   └── utils.ts            # Tailwind 类名合并等工具
+├── src/                    # 源代码目录
+│   ├── components/         # 业务组件
+│   │   ├── agents/         # Agent 核心模块 (百闻与千析)
+│   │   │   ├── AnalysisAgent.tsx # 千析 Agent 实现
+│   │   │   └── QAAgent.tsx       # 百闻 Agent 实现
+│   │   └── SettingsPanel.tsx     # 设置面板组件
+│   ├── services/           # 业务逻辑服务
+│   │   ├── geminiService.ts      # Gemini API 集成服务
+│   │   └── storageService.ts     # IndexedDB 持久化服务
+│   ├── lib/                # 业务工具库
+│   │   └── i18n.ts               # 国际化配置
+│   ├── types.ts            # 全局 TypeScript 类型定义
+│   ├── App.tsx             # 应用主入口组件
+│   ├── main.tsx            # React 渲染入口
+│   └── index.css           # 全局样式与 Tailwind 指令
+├── index.html              # HTML 模板
+├── metadata.json           # 应用元数据
+├── package.json            # 依赖管理与脚本
+├── tsconfig.json           # TypeScript 配置
+└── vite.config.ts          # Vite 构建配置
+```
+
+## 快速开始
 
 1. 环境要求
 - Node.js 18 或更高版本
@@ -82,13 +83,12 @@ npm run dev
 3. 在“千析”模块，您可以拖拽本地文件或粘贴视频链接，点击“开始千析”生成报告。
 4. 生成报告后，点击“导出 Word”即可下载本地文档。
 
-在线打包优化说明
+技术架构说明
 
-为了确保在 demo2apk.lasuo.ai 等在线打包平台顺利构建，项目已进行了以下优化：
-- 降级至 Tailwind CSS 3.4 以获得最佳兼容性。
-- 移除了所有冗余的 Capacitor 和 Cordova 插件。
-- 简化了 Vite 配置，仅保留核心构建逻辑。
-- 移除了 android 和 ios 目录，由打包平台自动生成。
+- 模块化设计：Agent 逻辑完全解耦，易于扩展新的智能助手。
+- 响应式布局：适配移动端与桌面端，提供一致的用户体验。
+- 性能优化：采用流式响应 (Streaming) 技术，减少用户等待感。
+- 安全性：API 密钥通过环境变量管理，敏感逻辑位于服务端处理。
 
 许可证
 
