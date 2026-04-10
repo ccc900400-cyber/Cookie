@@ -1,20 +1,65 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+README.md
 
-# Run and deploy your AI Studio app
+Cookie - 多模态智能分析与对话平台
 
-This contains everything you need to run your app locally.
+项目简介
 
-View your app in AI Studio: https://ai.studio/apps/7dbc966d-caf1-4580-b702-71079a846a0d
+Cookie 是一个基于 Google Gemini 3 Flash 模型构建的高性能多模态分析平台。它采用双 Agent 架构，提供深度文件解析、视频链接分析以及通用的知识问答服务。
 
-## Run Locally
+核心功能
 
-**Prerequisites:**  Node.js
+1. 千析 (Analysis Agent)
+- 支持多种格式：PDF、Word、MP4、MOV 等。
+- 深度解析：自动提取核心要点，重构逻辑结构。
+- 链接分析：支持在线视频链接的深度内容提取。
+- 报告导出：支持将分析结果一键导出为 Word 文档。
+- 历史记录：自动保存分析历史，支持随时回溯。
 
+2. 百闻 (QA Agent)
+- 智能对话：基于 Gemini 3 Flash 的全场景对话。
+- 实时热点：自动获取并推荐当前热门话题。
+- 知识交互：支持复杂问题的逻辑推理与创意写作。
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+技术栈
+
+- 前端框架：React 18
+- 构建工具：Vite
+- 样式处理：Tailwind CSS
+- 动画库：Motion (framer-motion)
+- 图标库：Lucide React
+- AI 模型：Google Gemini 3 Flash
+- 数据持久化：IndexedDB (通过自定义存储服务)
+
+快速开始
+
+1. 环境要求
+- Node.js 18 或更高版本
+- npm 或 yarn 包管理器
+
+2. 安装依赖
+npm install
+
+3. 配置环境
+在项目根目录创建 .env 文件并添加您的 Gemini API 密钥：
+GEMINI_API_KEY=您的密钥
+
+4. 启动开发服务器
+npm run dev
+
+使用指南
+
+1. 进入应用后，左侧导航栏可切换“百闻”与“千析”模块。
+2. 在“百闻”模块，您可以直接输入问题或点击下方的热门话题进行对话。
+3. 在“千析”模块，您可以拖拽本地文件或粘贴视频链接，点击“开始千析”生成报告。
+4. 生成报告后，点击“导出 Word”即可下载本地文档。
+
+技术架构说明
+
+- 模块化设计：Agent 逻辑完全解耦，易于扩展新的智能助手。
+- 响应式布局：适配移动端与桌面端，提供一致的用户体验。
+- 性能优化：采用流式响应 (Streaming) 技术，减少用户等待感。
+- 安全性：API 密钥通过环境变量管理，敏感逻辑位于服务端处理。
+
+许可证
+
+Apache-2.0 License
