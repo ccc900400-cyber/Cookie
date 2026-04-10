@@ -10,8 +10,6 @@ import {
   X, 
   CheckCircle2, 
   Loader2, 
-  Download, 
-  FileDown,
   Sparkles,
   History,
   RefreshCw
@@ -111,21 +109,6 @@ export default function AnalysisAgent({ settings }: AnalysisAgentProps) {
       console.error('Failed to clear analysis history:', e);
     }
     setTimeout(() => setIsRefreshing(false), 500);
-  };
-
-  const exportToWord = () => {
-    if (!analysisResult) return;
-    // Remove Markdown characters * and #
-    const cleanResult = analysisResult.replace(/[*#]/g, '');
-    const blob = new Blob([cleanResult], { type: 'application/msword' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `Analysis_Report_${new Date().getTime()}.doc`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
   };
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
@@ -419,12 +402,6 @@ export default function AnalysisAgent({ settings }: AnalysisAgentProps) {
                             <CardTitle>{t.reportTitle}</CardTitle>
                             <CardDescription>{t.reportDesc}</CardDescription>
                           </div>
-                          <div className="flex gap-2">
-                            <Button variant="outline" size="sm" className="rounded-lg" onClick={exportToWord}>
-                              <FileDown size={16} className="mr-2" />
-                              {t.exportWord}
-                            </Button>
-                          </div>
                         </div>
                       </CardHeader>
                       <CardContent className="p-8">
@@ -502,9 +479,6 @@ export default function AnalysisAgent({ settings }: AnalysisAgentProps) {
                         </div>
                         <div className="flex items-center gap-4">
                           <Badge variant="outline" className="text-[10px]">{item.status}</Badge>
-                          <Button variant="ghost" size="icon" className="rounded-lg">
-                            <Download size={16} />
-                          </Button>
                         </div>
                       </div>
                     ))
