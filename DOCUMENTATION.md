@@ -44,28 +44,33 @@ Cookie 是一款集成式 AI 应用，旨在通过先进的语言模型简化复
 - 响应超时：若遇到网络波动，系统内置了自动重试机制（最多 3 次）。
 - 文件限制：单个文件建议不超过 100MB 以获得最佳解析效果。
 
-6. Android 打包重复类冲突解决 (Duplicate Classes)
+6. 在线打包平台优化指南 (demo2apk.lasuo.ai)
 
-如果在打包过程中遇到 checkDebugDuplicateClasses 错误，说明项目中存在重复的依赖类。请参考以下步骤解决：
+为了解决 checkDebugDuplicateClasses 错误并确保在线打包成功，请遵循以下优化建议：
 
-6.1 启用 Jetifier
-由于部分旧插件仍在使用 Android Support 库，需要使用 Jetifier 将其转换为 AndroidX：
-- 安装：npm install jetifier
-- 运行：npx jetifier
+6.1 依赖瘦身
+- 卸载所有多余的 Capacitor 和 Cordova 插件。
+- 仅保留核心依赖：react, react-dom, vite, tailwindcss, postcss, autoprefixer。
+- 避免在 package.json 中引入 cordova-js 或 cordova 相关包。
 
-6.2 清理 Gradle 缓存
-进入 android 目录并执行清理操作：
-- 命令：cd android && ./gradlew clean
-- 同步：npx cap sync android
+6.2 样式兼容性
+- 项目已降级至 Tailwind CSS 3.4。
+- 确保 postcss.config.js 使用 module.exports 格式。
+- 确保存在 tailwind.config.js 配置文件。
 
-6.3 强制统一依赖版本
-如果发现特定的库冲突，可以在 android/app/build.gradle 文件的末尾添加以下配置：
-configurations.all {
-    resolutionStrategy {
-        failOnVersionConflict() 
-    }
-}
+6.3 打包 ZIP 注意事项
+上传至在线平台时，ZIP 压缩包应仅包含以下内容：
+- src 目录
+- public 目录
+- index.html
+- package.json
+- vite.config.ts
+- postcss.config.js
+- tailwind.config.js
 
-6.4 检查版本管理
-确保 android/variables.gradle 中的版本号保持最新且一致。
+绝对不要包含以下内容：
+- node_modules 目录
+- android 或 ios 目录
+- .git 目录
+- dist 目录 (平台会自动执行构建)
 

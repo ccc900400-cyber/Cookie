@@ -53,7 +53,7 @@ Cookie 是一个基于 Google Gemini 3 Flash 模型构建的高性能多模态�
 
 - 前端框架：React 19
 - 构建工具：Vite 6
-- 样式处理：Tailwind CSS 4 (PostCSS 模式)
+- 样式处理：Tailwind CSS 3.4
 - 动画库：Motion
 - 图标库：Lucide React
 - AI 模型：Google Gemini 3 Flash
@@ -81,6 +81,14 @@ npm run dev
 2. 在“百闻”模块，您可以直接输入问题或点击下方的热门话题进行对话。
 3. 在“千析”模块，您可以拖拽本地文件或粘贴视频链接，点击“开始千析”生成报告。
 4. 生成报告后，点击“导出 Word”即可下载本地文档。
+
+在线打包优化说明
+
+为了确保在 demo2apk.lasuo.ai 等在线打包平台顺利构建，项目已进行了以下优化：
+- 降级至 Tailwind CSS 3.4 以获得最佳兼容性。
+- 移除了所有冗余的 Capacitor 和 Cordova 插件。
+- 简化了 Vite 配置，仅保留核心构建逻辑。
+- 移除了 android 和 ios 目录，由打包平台自动生成。
 
 许可证
 
