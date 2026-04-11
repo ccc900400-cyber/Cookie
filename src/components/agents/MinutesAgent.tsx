@@ -1,0 +1,713 @@
+import { motion, AnimatePresence } from 'motion/react';
+import { 
+  Mic, FileText, Users, Lightbulb, CheckCircle2, Download, Copy, Check, 
+  Loader2, StopCircle, Volume2, History, Trash2, Calendar, Clock, ChevronRight,
+  Play, Pause, Share2, MoreVertical, Settings2
+} from 'lucide-react';
+import { useState, useRef, useEffect } from 'react';
+import { Card } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { useTranslation } from '../../lib/i18n';
+import { AppSettings } from '../../types';
+import { cn } from '@/lib/utils';
+import ReactMarkdown from 'react-markdown';
+import { Document, Packer, Paragraph, TextRun } from 'docx';
+
+import { GoogleGenAI } from "@google/genai";
+
+interface MinutesAgentProps {
+  settings: AppSettings;
+}
+
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+
+interface RecordingSession {
+  id: string;
+  title: string;
+  date: string;
+  duration: string;
+  summary: string;
+  transcript: string;
+}
+
+export default function MinutesAgent({ settings }: MinutesAgentProps) {
+  const t = useTranslation(settings.language);
+  const [isRecording, setIsRecording] = useState(false);
+  const [status, setStatus] = useState<'idle' | 'recording' | 'processing' | 'completed' | 'history'>('idle');
+  const [summary, setSummary] = useState('');
+  const [transcript, setTranscript] = useState('');
+  const [activeResultTab, setActiveResultTab] = useState<'summary' | 'transcript'>('summary');
+  const [copied, setCopied] = useState(false);
+  const [recordingTime, setRecordingTime] = useState(0);
+  const [history, setHistory] = useState<RecordingSession[]>([]);
+  const [selectedSession, setSelectedSession] = useState<RecordingSession | null>(null);
+  const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
+  
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const animationRef = useRef<number | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+
+  const workflow = t.minutesWorkflow;
+
+  // Load history from localStorage on mount
+  useEffect(() => {
+    const savedHistory = localStorage.getItem('minutes_history');
+    if (savedHistory) {
+      setHistory(JSON.parse(savedHistory));
+    }
+  }, []);
+
+  // Save history to localStorage
+  useEffect(() => {
+    localStorage.setItem('minutes_history', JSON.stringify(history));
+  }, [history]);
+
+  // Recording Timer
+  useEffect(() => {
+    if (isRecording) {
+      timerRef.current = setInterval(() => {
+        setRecordingTime(prev => prev + 1);
+      }, 1000);
+    } else {
+      if (timerRef.current) clearInterval(timerRef.current);
+    }
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, [isRecording]);
+
+  // Waveform Animation
+  useEffect(() => {
+    if (isRecording && canvasRef.current) {
+      const canvas = canvasRef.current;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+
+      const draw = () => {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = '#007AFF';
+        const barWidth = 3;
+        const gap = 2;
+        const bars = canvas.width / (barWidth + gap);
+
+        for (let i = 0; i < bars; i++) {
+          const height = Math.random() * canvas.height * 0.8;
+          const x = i * (barWidth + gap);
+          const y = (canvas.height - height) / 2;
+          
+          // Gradient effect
+          const gradient = ctx.createLinearGradient(0, y, 0, y + height);
+          gradient.addColorStop(0, '#007AFF');
+          gradient.addColorStop(1, '#5AC8FA');
+          ctx.fillStyle = gradient;
+          
+          ctx.beginPath();
+          ctx.roundRect(x, y, barWidth, height, 2);
+          ctx.fill();
+        }
+        animationRef.current = requestAnimationFrame(draw);
+      };
+      draw();
+    } else {
+      if (animationRef.current) cancelAnimationFrame(animationRef.current);
+    }
+    return () => {
+      if (animationRef.current) cancelAnimationFrame(animationRef.current);
+    };
+  }, [isRecording]);
+
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  const recordingTimeRef = useRef(0);
+  const maxVolumeRef = useRef(0);
+  const audioContextRef = useRef<AudioContext | null>(null);
+
+  // Recording Timer
+  useEffect(() => {
+    if (isRecording) {
+      recordingTimeRef.current = 0;
+      timerRef.current = setInterval(() => {
+        setRecordingTime(prev => {
+          const next = prev + 1;
+          recordingTimeRef.current = next;
+          return next;
+        });
+      }, 1000);
+    } else {
+      if (timerRef.current) clearInterval(timerRef.current);
+    }
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, [isRecording]);
+
+  const toggleRecording = async () => {
+    if (status === 'idle' || status === 'completed' || status === 'history') {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const mediaRecorder = new MediaRecorder(stream);
+        mediaRecorderRef.current = mediaRecorder;
+        audioChunksRef.current = [];
+
+        // Volume tracking
+        const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+        audioContextRef.current = audioContext;
+        
+        // Ensure context is running
+        if (audioContext.state === 'suspended') {
+          await audioContext.resume();
+        }
+
+        const source = audioContext.createMediaStreamSource(stream);
+        const analyser = audioContext.createAnalyser();
+        analyser.fftSize = 256;
+        source.connect(analyser);
+        const dataArray = new Uint8Array(analyser.frequencyBinCount);
+        maxVolumeRef.current = 0;
+
+        const checkVolume = () => {
+          if (mediaRecorder.state !== 'recording') return;
+          analyser.getByteFrequencyData(dataArray);
+          let currentMax = 0;
+          for (let i = 0; i < dataArray.length; i++) {
+            if (dataArray[i] > currentMax) currentMax = dataArray[i];
+          }
+          if (currentMax > maxVolumeRef.current) maxVolumeRef.current = currentMax;
+          requestAnimationFrame(checkVolume);
+        };
+        checkVolume();
+
+        mediaRecorder.ondataavailable = (event) => {
+          if (event.data.size > 0) {
+            audioChunksRef.current.push(event.data);
+          }
+        };
+
+        mediaRecorder.onstop = async () => {
+          const finalTime = recordingTimeRef.current;
+          const finalMaxVolume = maxVolumeRef.current;
+
+          // Close audio context
+          if (audioContextRef.current) {
+            audioContextRef.current.close();
+            audioContextRef.current = null;
+          }
+
+          // Check if recording is too short or too quiet
+          // Lowered threshold to 10 for better sensitivity
+          if (finalTime < 2 || finalMaxVolume < 10) {
+            console.log(`Recording skipped: time=${finalTime}s, maxVolume=${finalMaxVolume}`);
+            setStatus('idle');
+            return;
+          }
+
+          const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+          setAudioBlob(blob);
+          await processAudio(blob, finalTime);
+        };
+
+        setIsRecording(true);
+        setStatus('recording');
+        setSummary('');
+        setRecordingTime(0);
+        recordingTimeRef.current = 0;
+        mediaRecorder.start();
+      } catch (err) {
+        console.error("Failed to start recording:", err);
+        alert(t.micPermissionError);
+      }
+    } else if (status === 'recording') {
+      setIsRecording(false);
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+        mediaRecorderRef.current.stop();
+        mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
+      }
+    }
+  };
+
+  const processAudio = async (blob: Blob, duration: number) => {
+    setStatus('processing');
+    try {
+      // Convert blob to base64
+      const reader = new FileReader();
+      const base64Promise = new Promise<string>((resolve) => {
+        reader.onloadend = () => {
+          const base64 = (reader.result as string).split(',')[1];
+          resolve(base64);
+        };
+      });
+      reader.readAsDataURL(blob);
+      const base64Data = await base64Promise;
+
+      // Call Gemini for transcription and summarization
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: [
+          {
+            parts: [
+              {
+                inlineData: {
+                  mimeType: "audio/webm",
+                  data: base64Data
+                }
+              },
+              {
+                text: "请先将这段音频完整转录为文字，然后根据转录内容生成一份结构化的会议纪要。请严格按照以下格式输出：\n\n[TRANSCRIPT]\n(此处为完整转录文字)\n\n[SUMMARY]\n(此处为结构化会议纪要，包含会议主题、核心观点、结论与待办事项)\n\n如果音频中没有任何人说话或者只有噪音，请只回复：'未检测到有效语音内容，无法生成纪要。'"
+              }
+            ]
+          }
+        ]
+      });
+
+      const resultText = response.text || t.error;
+      
+      if (resultText.includes("未检测到有效语音内容")) {
+        setStatus('idle');
+        return;
+      }
+
+      let finalTranscript = "";
+      let finalSummary = "";
+
+      if (resultText.includes("[TRANSCRIPT]") && resultText.includes("[SUMMARY]")) {
+        finalTranscript = resultText.split("[TRANSCRIPT]")[1].split("[SUMMARY]")[0].trim();
+        finalSummary = resultText.split("[SUMMARY]")[1].trim();
+      } else {
+        finalSummary = resultText;
+        finalTranscript = "未能提取原始转录。";
+      }
+
+      setTranscript(finalTranscript);
+      setSummary(finalSummary);
+      
+      // Save to history
+      const newSession: RecordingSession = {
+        id: Date.now().toString(),
+        title: `${t.minutes} ${new Date().toLocaleDateString()}`,
+        date: new Date().toLocaleString(),
+        duration: formatTime(duration),
+        summary: finalSummary,
+        transcript: finalTranscript
+      };
+      setHistory(prev => [newSession, ...prev]);
+      setSelectedSession(newSession);
+      setStatus('completed');
+    } catch (error) {
+      console.error("Processing error:", error);
+      setStatus('idle');
+    }
+  };
+
+  const handleCopy = (text: string) => {
+    navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleExport = async (session: RecordingSession) => {
+    try {
+      const doc = new Document({
+        sections: [{
+          properties: {},
+          children: [
+            new Paragraph({
+              children: [
+                new TextRun({
+                  text: session.title,
+                  bold: true,
+                  size: 32,
+                }),
+              ],
+            }),
+            new Paragraph({
+              children: [
+                new TextRun({
+                  text: `${t.date}: ${session.date}`,
+                  size: 24,
+                }),
+              ],
+            }),
+            new Paragraph({
+              children: [
+                new TextRun({
+                  text: `${t.duration}: ${session.duration}`,
+                  size: 24,
+                }),
+              ],
+            }),
+            new Paragraph({
+              children: [
+                new TextRun({
+                  text: "\n",
+                }),
+              ],
+            }),
+            ...session.summary.split('\n').map(line => 
+              new Paragraph({
+                children: [
+                  new TextRun({
+                    text: line.replace(/[*#]/g, ''),
+                    size: 24,
+                  }),
+                ],
+              })
+            ),
+            new Paragraph({
+              children: [
+                new TextRun({
+                  text: `\n\n${t.rawTranscript}:\n`,
+                  bold: true,
+                  size: 24,
+                }),
+              ],
+            }),
+            ...session.transcript.split('\n').map(line => 
+              new Paragraph({
+                children: [
+                  new TextRun({
+                    text: line,
+                    size: 22,
+                  }),
+                ],
+              })
+            ),
+          ],
+        }],
+      });
+
+      const blob = await Packer.toBlob(doc);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${session.title}.docx`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error("Export error:", error);
+      alert(t.exportError);
+    }
+  };
+
+  const deleteSession = (id: string) => {
+    setHistory(prev => prev.filter(s => s.id !== id));
+    if (selectedSession?.id === id) {
+      setSelectedSession(null);
+      setStatus('idle');
+    }
+  };
+
+  return (
+    <div className="h-full flex flex-col bg-[#F8F9FA] dark:bg-[#000000] overflow-hidden">
+      {/* Top Navigation Bar */}
+      <div className="h-16 border-b bg-white/80 dark:bg-black/80 backdrop-blur-md flex items-center justify-between px-6 shrink-0 z-10">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg bg-[#007AFF] flex items-center justify-center text-white">
+            <Volume2 size={18} />
+          </div>
+          <h1 className="font-bold text-lg tracking-tight">{t.minutes}</h1>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            onClick={() => {
+              setStatus('history');
+              setSelectedSession(null);
+            }}
+            className={cn("rounded-full gap-2", status === 'history' && "bg-primary/10 text-primary")}
+          >
+            <History size={18} />
+            {t.history}
+          </Button>
+        </div>
+      </div>
+
+      <div className="flex-1 flex overflow-hidden relative">
+        {/* Main Content Area */}
+        <main className="flex-1 overflow-y-auto custom-scrollbar relative">
+          <AnimatePresence mode="wait">
+            {(status === 'idle' || status === 'history') && !selectedSession && (
+              <motion.div
+                key="idle-view"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="h-full"
+              >
+                {status === 'idle' ? (
+                  <div className="max-w-4xl mx-auto p-4 md:p-8 flex flex-col items-center justify-center h-full space-y-8">
+                    <motion.div
+                      whileHover={{ scale: 1.02 }}
+                      whileTap={{ scale: 0.98 }}
+                      onClick={toggleRecording}
+                      className="cursor-pointer max-w-sm mx-auto w-full"
+                    >
+                      <Card className="p-6 border-none bg-primary text-white rounded-[32px] shadow-2xl shadow-primary/20 flex flex-col items-center justify-center space-y-4 text-center">
+                        <div className="w-12 h-12 rounded-2xl bg-white/20 flex items-center justify-center">
+                          <Mic size={24} />
+                        </div>
+                        <div>
+                          <h3 className="text-xl font-bold">{t.startMinutes}</h3>
+                          <p className="text-white/80 text-sm mt-1">{t.startMinutesDesc}</p>
+                        </div>
+                      </Card>
+                    </motion.div>
+                    <p className="text-muted-foreground text-base max-w-md text-center px-4">{t.minutesTagline}</p>
+                  </div>
+                ) : (
+                  <div className="max-w-4xl mx-auto p-4 md:p-8 space-y-6">
+                    <div className="flex items-center justify-between">
+                      <h2 className="text-2xl font-bold">{t.historyRecords}</h2>
+                      <p className="text-sm text-muted-foreground">{t.totalRecords.replace('{{count}}', history.length.toString())}</p>
+                    </div>
+
+                    {history.length === 0 ? (
+                      <div className="py-20 text-center space-y-4">
+                        <div className="w-20 h-20 rounded-full bg-muted flex items-center justify-center mx-auto text-muted-foreground">
+                          <History size={40} />
+                        </div>
+                        <p className="text-muted-foreground">{t.noHistory}</p>
+                        <Button onClick={() => setStatus('idle')}>{t.goToRecord}</Button>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {history.map((session) => (
+                          <Card 
+                            key={session.id} 
+                            onClick={() => setSelectedSession(session)}
+                            className="p-5 border-none bg-white dark:bg-[#1C1C1E] rounded-[24px] shadow-sm hover:shadow-md transition-all cursor-pointer group"
+                          >
+                            <div className="flex justify-between items-start mb-3">
+                              <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-white transition-colors">
+                                <Volume2 size={20} />
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs text-muted-foreground">{session.duration}</span>
+                                <Button 
+                                  variant="ghost" 
+                                  size="icon" 
+                                  className="h-8 w-8 rounded-full opacity-0 group-hover:opacity-100 transition-opacity text-red-500 hover:text-red-600 hover:bg-red-50"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    deleteSession(session.id);
+                                  }}
+                                >
+                                  <Trash2 size={14} />
+                                </Button>
+                              </div>
+                            </div>
+                            <h4 className="font-bold mb-1 truncate">{session.title}</h4>
+                            <p className="text-xs text-muted-foreground mb-4">{session.date}</p>
+                            <div className="flex items-center justify-between pt-3 border-t border-muted/10">
+                              <span className="text-[10px] uppercase font-bold tracking-wider text-primary">{t.viewDetails}</span>
+                              <ChevronRight size={14} className="text-muted-foreground" />
+                            </div>
+                          </Card>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </motion.div>
+            )}
+
+            {(status === 'recording' || status === 'processing') && (
+              <motion.div
+                key="active-session"
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 1.05 }}
+                className="absolute inset-0 bg-[#F8F9FA]/95 dark:bg-black/95 backdrop-blur-xl z-20 flex flex-col items-center justify-center p-8 text-center"
+              >
+                <div className="max-w-xl w-full space-y-10">
+                  <div className="relative mx-auto w-56 h-56">
+                    <motion.div
+                      animate={{ 
+                        scale: status === 'recording' ? [1, 1.2, 1] : 1,
+                        opacity: status === 'recording' ? [0.3, 0.1, 0.3] : 0.1
+                      }}
+                      transition={{ repeat: Infinity, duration: 2 }}
+                      className="absolute inset-0 bg-primary rounded-full blur-3xl"
+                    />
+                    <div className="relative w-full h-full rounded-full bg-white dark:bg-[#1C1C1E] shadow-2xl flex flex-col items-center justify-center border border-primary/10">
+                      {status === 'recording' ? (
+                        <>
+                          <div className="absolute top-10 text-primary/40 font-bold uppercase tracking-widest text-[10px]">{t.recordingStatus}</div>
+                          <canvas ref={canvasRef} width={200} height={80} className="w-32 h-12 mb-2" />
+                          <div className="text-4xl font-mono font-bold tracking-tighter text-primary">
+                            {formatTime(recordingTime)}
+                          </div>
+                        </>
+                      ) : (
+                        <div className="flex flex-col items-center gap-4">
+                          <div className="relative">
+                            <Loader2 size={48} className="text-primary animate-spin" />
+                            <div className="absolute inset-0 flex items-center justify-center">
+                              <div className="w-1.5 h-1.5 bg-primary rounded-full animate-pulse" />
+                            </div>
+                          </div>
+                          <span className="font-bold text-lg text-primary tracking-tight">{t.aiAnalyzing}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    <h3 className="text-2xl font-bold tracking-tight">
+                      {status === 'recording' ? t.listening : t.generatingMinutes}
+                    </h3>
+                    <p className="text-muted-foreground text-base max-w-md mx-auto leading-relaxed">
+                      {status === 'recording' 
+                        ? t.listeningDesc 
+                        : t.generatingMinutesDesc}
+                    </p>
+                  </div>
+
+                  {status === 'recording' && (
+                    <Button 
+                      onClick={toggleRecording}
+                      variant="destructive"
+                      className="rounded-full h-14 px-10 text-lg font-bold shadow-2xl shadow-red-500/20 gap-3 hover:scale-105 transition-transform"
+                    >
+                      <StopCircle size={24} />
+                      {t.stopAndGenerate}
+                    </Button>
+                  )}
+                </div>
+              </motion.div>
+            )}
+
+            {(status === 'completed' || (status === 'history' && selectedSession)) && (
+              <motion.div
+                key="result-view"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="max-w-4xl mx-auto p-4 md:p-8 space-y-6 pb-32"
+              >
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div>
+                    <h2 className="text-xl md:text-2xl font-bold tracking-tight">{selectedSession?.title}</h2>
+                    <div className="flex flex-wrap items-center gap-3 mt-1.5 text-xs text-muted-foreground">
+                      <span className="flex items-center gap-1"><Calendar size={13} /> {selectedSession?.date}</span>
+                      <span className="flex items-center gap-1"><Clock size={13} /> {selectedSession?.duration}</span>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      onClick={() => handleCopy(activeResultTab === 'summary' ? (selectedSession?.summary || "") : (selectedSession?.transcript || ""))} 
+                      className="rounded-full gap-2"
+                    >
+                      {copied ? <Check size={16} /> : <Copy size={16} />}
+                      {t.copy}
+                    </Button>
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      className="rounded-full gap-2"
+                      onClick={() => selectedSession && handleExport(selectedSession)}
+                    >
+                      <Download size={16} />
+                      {t.export}
+                    </Button>
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      className="rounded-full gap-2 text-red-500 hover:text-red-600"
+                      onClick={() => selectedSession && deleteSession(selectedSession.id)}
+                    >
+                      <Trash2 size={16} />
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 gap-8">
+                  <div className="space-y-6">
+                    <div className="flex p-1 bg-muted rounded-xl w-fit">
+                      <button 
+                        onClick={() => setActiveResultTab('summary')}
+                        className={cn(
+                          "px-4 py-1.5 text-sm font-medium rounded-lg transition-all",
+                          activeResultTab === 'summary' ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
+                        )}
+                      >
+                        {t.smartMinutes}
+                      </button>
+                      <button 
+                        onClick={() => setActiveResultTab('transcript')}
+                        className={cn(
+                          "px-4 py-1.5 text-sm font-medium rounded-lg transition-all",
+                          activeResultTab === 'transcript' ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
+                        )}
+                      >
+                        {t.rawTranscript}
+                      </button>
+                    </div>
+
+                    <Card className="p-4 md:p-8 border-none bg-white dark:bg-[#1C1C1E] rounded-[32px] shadow-sm">
+                      <div className="flex items-center gap-2 mb-6 text-primary font-bold">
+                        {activeResultTab === 'summary' ? <FileText size={20} /> : <Volume2 size={20} />}
+                        <span className="text-lg">{activeResultTab === 'summary' ? t.smartMinutes : t.rawTranscript}</span>
+                      </div>
+                      <div className="prose prose-sm md:prose-base dark:prose-invert max-w-none">
+                        <div className="leading-relaxed whitespace-pre-wrap">
+                          {activeResultTab === 'summary' ? (
+                            <ReactMarkdown>{selectedSession?.summary || ""}</ReactMarkdown>
+                          ) : (
+                            <p>{selectedSession?.transcript || ""}</p>
+                          )}
+                        </div>
+                      </div>
+                    </Card>
+
+                    <Button 
+                      onClick={() => {
+                        setStatus('idle');
+                        setSelectedSession(null);
+                      }}
+                      className="w-full rounded-full h-12 text-base font-bold"
+                    >
+                      {t.startNewRecord}
+                    </Button>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+
+          </AnimatePresence>
+        </main>
+      </div>
+    </div>
+  );
+}
+
+// Helper for ASR icon (using RefreshCw as a base)
+function RefreshCw({ size, className }: { size?: number, className?: string }) {
+  return (
+    <svg 
+      width={size || 24} 
+      height={size || 24} 
+      viewBox="0 0 24 24" 
+      fill="none" 
+      stroke="currentColor" 
+      strokeWidth="2" 
+      strokeLinecap="round" 
+      strokeLinejoin="round" 
+      className={className}
+    >
+      <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
+      <path d="M21 3v5h-5" />
+      <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
+      <path d="M3 21v-5h5" />
+    </svg>
+  );
+}

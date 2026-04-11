@@ -10,9 +10,8 @@ export const translations = {
     settingsDesc: '管理您的偏好设置与 Agent 配置',
     theme: '外观主题',
     themeDesc: '选择您喜欢的界面显示模式',
-    light: '白天模式',
-    dark: '黑夜模式',
-    eye: '护眼模式',
+    light: '白天',
+    dark: '黑夜',
     language: '语言设置',
     languageDesc: '切换系统显示的语言',
     zhCN: '简体中文',
@@ -30,7 +29,6 @@ export const translations = {
     analyzing: '正在解析...',
     localImport: '本地文件导入',
     dropzoneText: '点击或拖拽文件至此',
-    supportFormats: '支持 PDF, Word, MP4, MOV 等格式',
     selectedFiles: '已选择文件',
     linkParsing: '在线链接解析',
     linkPlaceholder: '输入视频链接',
@@ -51,10 +49,60 @@ export const translations = {
     noResponse: '抱歉，我无法生成回复。',
     readingFiles: '正在读取文件...',
     fetchingLink: '正在获取链接内容...',
-    analysisPrompt: '请对以下内容进行深度解析，提取核心要点，重构逻辑结构，并撰写一份详细的分析报告。请确保输出的是人类可读的分析报告，而不是原始代码或技术文档。',
+    analysisPrompt: '请对以下内容进行深度解析，提取核心要点，重构逻辑结构，并撰写一份详细的分析报告。请确保输出的是人类可讀的分析报告，而不是原始代码或技术文档。',
     analysisSystem: '你是一个专业的数据分析专家。你的任务是分析用户提供的文件或链接内容。请务必输出结构化的 Markdown 报告，严禁直接输出 HTML、CSS 或代码块（除非是作为分析示例）。报告必须包含：1. 内容概览 2. 核心要点 3. 深度分析 4. 结论建议。请使用专业、客观的语气。',
-    qaSystem: 'You are a helpful general-purpose AI assistant. Be concise, logical, and creative. Use markdown for formatting.',
-    qaSuggestions: ['写一首关于春天的诗', '解释量子纠缠', '制定一周健身计划', '翻译这段话到英文']
+    qaSystem: 'You are a helpful general-purpose AI assistant. Be concise, logical, and creative. Use markdown for formatting, but DO NOT use double asterisks (**) for bolding.',
+    qaSuggestions: ['写一首关于春天的诗', '解释量子纠缠', '制定一周健身计划', '翻译这段话到英文'],
+    minutes: '纪要',
+    minutesDesc: '录音/快速生成精简会议纪要',
+    startMinutes: '立即开启录音纪要',
+    startMinutesDesc: '点击此处开始实时采集',
+    minutesTagline: '实时录音、自动转写、智能纪要，让每一场会议都有迹可循。',
+    listening: '正在倾听您的会议...',
+    listeningDesc: '系统正在实时采集音频，点击下方按钮结束录音。',
+    stopAndGenerate: '停止并生成纪要',
+    generatingMinutes: '正在生成智能纪要',
+    generatingMinutesDesc: 'AI 正在深度理解对话内容，提取核心观点与结论。',
+    aiAnalyzing: 'AI 解析中...',
+    historyRecords: '历史记录',
+    totalRecords: '共 {{count}} 条记录',
+    noHistory: '暂无历史记录',
+    goToRecord: '去录音',
+    smartMinutes: '智能纪要',
+    rawTranscript: '原始转录',
+    copy: '复制',
+    export: '导出',
+    startNewRecord: '开启新录音',
+    viewDetails: '查看详情',
+    recordingStatus: '录音中',
+    date: '日期',
+    duration: '时长',
+    micPermissionError: '无法启动录音，请确保已授予麦克风权限。',
+    processingError: '处理音频时出错，请重试。',
+    exportError: '导出 Word 失败。',
+    shortAudioError: '录音时间太短，请继续录音。',
+    noSpeechError: '未检测到有效语音内容，请重新录制。',
+    minutesWorkflow: {
+      title: '录音纪要功能的完整工作流程',
+      steps: [
+        {
+          title: '语音采集',
+          desc: '点击麦克风开始录音，系统实时采集音频，再次点击结束。'
+        },
+        {
+          title: '内容理解与结构化',
+          desc: '大模型自动分析音频内容：识别说话人角色；区分观点、争执、问题、结论；剔除冗余信息。'
+        },
+        {
+          title: '智能生成纪要',
+          desc: '按逻辑整理为：会议主题 / 核心议题；各方观点；争议点；最终结论；待办事项、分工、时间节点。'
+        },
+        {
+          title: '输出清晰纪要',
+          desc: '呈现分点、结构化、易读的正式纪要，可直接复制使用，也可导出为 Word 文档。'
+        }
+      ]
+    }
   },
   'zh-TW': {
     appName: 'Cookie',
@@ -66,9 +114,8 @@ export const translations = {
     settingsDesc: '管理您的偏好設置與 Agent 配置',
     theme: '外觀主題',
     themeDesc: '選擇您喜歡的界面顯示模式',
-    light: '白天模式',
-    dark: '黑夜模式',
-    eye: '護眼模式',
+    light: '白天',
+    dark: '黑夜',
     language: '語言設置',
     languageDesc: '切換系統顯示的語言',
     zhCN: '簡體中文',
@@ -86,7 +133,6 @@ export const translations = {
     analyzing: '正在解析...',
     localImport: '本地文件導入',
     dropzoneText: '點擊或拖拽文件至此',
-    supportFormats: '支持 PDF, Word, MP4, MOV 等格式',
     selectedFiles: '已選擇文件',
     linkParsing: '在線連結解析',
     linkPlaceholder: '輸入視頻連結',
@@ -108,13 +154,63 @@ export const translations = {
     readingFiles: '正在讀取文件...',
     fetchingLink: '正在獲取連結內容...',
     analysisPrompt: '請對以下內容進行深度解析，提取核心要點，重構邏輯結構，並撰寫一份詳細的分析報告。請確保輸出的是人類可讀的分析報告，而不是原始代碼或技術文檔。',
-    analysisSystem: '你是一個專業的數據分析專家。你的任務是分析用戶提供的文件或連結內容。請務必輸出結構化的 Markdown 報告，嚴禁直接輸出 HTML、CSS 或代碼塊（除非是作為分析示例）。報告必須包含：1. 內容概覽 2. 核心要點 3. 深度分析 4. 結論建議。請使用專業、客觀的語氣。',
-    qaSystem: 'You are a helpful general-purpose AI assistant. Be concise, logical, and creative. Use markdown for formatting.',
-    qaSuggestions: ['寫一首關於春天的詩', '解釋量子糾纏', '制定一周健身計劃', '翻譯這段話到英文']
+    analysisSystem: '你是一個專業的數據分析專家。你的任務是分析用戶提供的文件或連結內容。請務必輸出結構化的 Markdown 報告，嚴禁直接輸出 HTML、CSS 或代碼塊（之後是作為分析示例）。報告必須包含：1. 內容概覽 2. 核心要點 3. 深度分析 4. 結論建議。請使用專業、客觀的語氣。',
+    qaSystem: 'You are a helpful general-purpose AI assistant. Be concise, logical, and creative. Use markdown for formatting, but DO NOT use double asterisks (**) for bolding.',
+    qaSuggestions: ['寫一首關於春天的詩', '解釋量子糾纏', '制定一周健身計劃', '翻譯這段話到英文'],
+    minutes: '紀要',
+    minutesDesc: '錄音/快速生成精簡會議紀要',
+    startMinutes: '立即開啟錄音紀要',
+    startMinutesDesc: '點擊此處開始實時采集',
+    minutesTagline: '實時錄音、自動轉寫、智能紀要，讓每一場會議都有跡可循。',
+    listening: '正在傾聽您的會議...',
+    listeningDesc: '系統正在實時采集音頻，點擊下方按鈕結束錄音。',
+    stopAndGenerate: '停止並生成紀要',
+    generatingMinutes: '正在生成智能紀要',
+    generatingMinutesDesc: 'AI 正在深度理解對話內容，提取核心觀點與結論。',
+    aiAnalyzing: 'AI 解析中...',
+    historyRecords: '歷史記錄',
+    totalRecords: '共 {{count}} 條記錄',
+    noHistory: '暫無歷史記錄',
+    goToRecord: '去錄音',
+    smartMinutes: '智能紀要',
+    rawTranscript: '原始轉錄',
+    copy: '複製',
+    export: '導出',
+    startNewRecord: '開啟新錄音',
+    viewDetails: '查看詳情',
+    recordingStatus: '錄音中',
+    date: '日期',
+    duration: '時長',
+    micPermissionError: '無法啟動錄音，請確保已授予麥克風權限。',
+    processingError: '處理音頻時出錯，請重試。',
+    exportError: '導出 Word 失敗。',
+    shortAudioError: '錄音時間太短，請繼續錄音。',
+    noSpeechError: '未檢測到有效語音內容，請重新錄製。',
+    minutesWorkflow: {
+      title: '錄音紀要功能的完整工作流程',
+      steps: [
+        {
+          title: '語音采集',
+          desc: '點擊麥克風開始錄音，系統實時采集音頻，再次點擊結束。'
+        },
+        {
+          title: '內容理解與結構化',
+          desc: '大模型自動分析音頻內容：識別說話人角色；區分觀點、爭執、問題、結論；剔除冗余信息。'
+        },
+        {
+          title: '智能生成紀要',
+          desc: '按邏輯整理為：會議主題 / 核心議題；各方觀點；爭議點；最終結論；待辦事項、分工、時間節點。'
+        },
+        {
+          title: '輸出清晰紀要',
+          desc: '呈現分點、結構化、易讀的正式紀要，可直接複製使用，也可導出為 Word 文檔。'
+        }
+      ]
+    }
   },
   'en': {
     appName: 'Cookie',
-    analysis: 'Intelligent Analysis',
+    analysis: 'Qianxi',
     analysisDesc: 'Deep file/link analysis and report generation',
     qa: 'Baiwen',
     qaDesc: 'All-scenario intelligent dialogue and interaction',
@@ -124,7 +220,6 @@ export const translations = {
     themeDesc: 'Choose your preferred display mode',
     light: 'Light',
     dark: 'Dark',
-    eye: 'Eye Protection',
     language: 'Language',
     languageDesc: 'Switch the system display language',
     zhCN: 'Simplified Chinese',
@@ -138,17 +233,16 @@ export const translations = {
     importAnalysis: 'Import & Analyze',
     analysisResult: 'Analysis Result',
     history: 'History',
-    startAnalyze: 'Start Analysis',
+    startAnalyze: 'Start Qianxi',
     analyzing: 'Analyzing...',
     localImport: 'Local File Import',
     dropzoneText: 'Click or drag files here',
-    supportFormats: 'Supports PDF, Word, MP4, MOV, etc.',
     selectedFiles: 'Selected Files',
     linkParsing: 'Online Link Parsing',
     linkPlaceholder: 'Enter video link',
     parse: 'Parse',
     noResult: 'No Analysis Result',
-    noResultDesc: 'Please import files or enter a link, then click "Start Analysis".',
+    noResultDesc: 'Please import files or enter a link, then click "Start Qianxi".',
     reportTitle: 'Intelligent Analysis Report',
     reportDesc: 'AI-generated deep analysis document',
     exportWord: 'Export Word',
@@ -165,8 +259,58 @@ export const translations = {
     fetchingLink: 'Fetching link content...',
     analysisPrompt: 'Please perform a deep analysis of the following content, extract key points, reconstruct logical structures, and write a detailed analysis report. Ensure the output is a human-readable analysis report, not raw code or technical documentation.',
     analysisSystem: 'You are a professional data analysis expert. Your task is to analyze the files or link content provided by the user. You MUST output a structured Markdown report. Do NOT output raw HTML, CSS, or large code blocks unless they are specific examples within your analysis. The report must include: 1. Content Overview 2. Key Points 3. Deep Analysis 4. Conclusion & Suggestions. Use a professional and objective tone.',
-    qaSystem: 'You are a helpful general-purpose AI assistant. Be concise, logical, and creative. Use markdown for formatting.',
-    qaSuggestions: ['Write a poem about spring', 'Explain quantum entanglement', 'Create a weekly workout plan', 'Translate this to Chinese']
+    qaSystem: 'You are a helpful general-purpose AI assistant. Be concise, logical, and creative. Use markdown for formatting, but DO NOT use double asterisks (**) for bolding.',
+    qaSuggestions: ['Write a poem about spring', 'Explain quantum entanglement', 'Create a weekly workout plan', 'Translate this to Chinese'],
+    minutes: 'Minutes',
+    minutesDesc: 'Recording/Quickly generate concise meeting minutes',
+    startMinutes: 'Start Minutes Now',
+    startMinutesDesc: 'Click here to start real-time capture',
+    minutesTagline: 'Real-time recording, auto-transcription, smart minutes, making every meeting traceable.',
+    listening: 'Listening to your meeting...',
+    listeningDesc: 'System is capturing audio in real-time. Click the button below to end.',
+    stopAndGenerate: 'Stop and Generate Minutes',
+    generatingMinutes: 'Generating Smart Minutes',
+    generatingMinutesDesc: 'AI is deeply understanding the conversation, extracting key points and conclusions.',
+    aiAnalyzing: 'AI Analyzing...',
+    historyRecords: 'History Records',
+    totalRecords: 'Total {{count}} records',
+    noHistory: 'No history records',
+    goToRecord: 'Go to Record',
+    smartMinutes: 'Smart Minutes',
+    rawTranscript: 'Raw Transcript',
+    copy: 'Copy',
+    export: 'Export',
+    startNewRecord: 'Start New Record',
+    viewDetails: 'View Details',
+    recordingStatus: 'Recording',
+    date: 'Date',
+    duration: 'Duration',
+    micPermissionError: 'Failed to start recording. Please ensure microphone permission is granted.',
+    processingError: 'Error processing audio. Please try again.',
+    exportError: 'Failed to export Word.',
+    shortAudioError: 'Recording is too short. Please continue recording.',
+    noSpeechError: 'No valid speech content detected. Please re-record.',
+    minutesWorkflow: {
+      title: 'Complete Workflow of Recording Minutes',
+      steps: [
+        {
+          title: 'Voice Capture',
+          desc: 'Click the microphone to start recording. The system captures audio in real-time. Click again to end.'
+        },
+        {
+          title: 'Content Understanding',
+          desc: 'LLM automatically analyzes audio: identifies speakers; distinguishes viewpoints, disputes, questions, and conclusions; removes redundant info.'
+        },
+        {
+          title: 'Smart Generation',
+          desc: 'Logically organized into: meeting theme/core topics; viewpoints; disputes; final conclusions; action items, assignments, and deadlines.'
+        },
+        {
+          title: 'Clear Output',
+          desc: 'Presents structured, easy-to-read formal minutes for direct copying or exporting to Word.'
+        }
+      ]
+    }
   }
 };
 

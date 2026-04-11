@@ -1,5 +1,5 @@
 {
   "name": "Cookie",
   "description": "A cross-file multi-modal analysis and visualization platform featuring dual-agent architecture for vertical file analysis and general Q&A.",
-  "requestFramePermissions": []
+  "requestFramePermissions": ["microphone"]
 }

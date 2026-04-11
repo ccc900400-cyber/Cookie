@@ -1,11 +1,6 @@
 import { GoogleGenAI } from "@google/genai";
 
 const apiKey = process.env.GEMINI_API_KEY || '';
-console.log("[GeminiService] Frontend API Key check:", {
-  hasKey: !!apiKey,
-  keyLength: apiKey.length,
-  keyPrefix: apiKey.substring(0, 4)
-});
 const ai = new GoogleGenAI({ apiKey });
 
 const MAX_RETRIES = 3;
@@ -16,7 +11,6 @@ async function withRetry<T>(fn: () => Promise<T>, retries = MAX_RETRIES): Promis
     return await fn();
   } catch (error) {
     if (retries > 0) {
-      console.warn(`Gemini API error, retrying... (${MAX_RETRIES - retries + 1}/${MAX_RETRIES})`, error);
       await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
       return withRetry(fn, retries - 1);
     }
@@ -27,9 +21,15 @@ async function withRetry<T>(fn: () => Promise<T>, retries = MAX_RETRIES): Promis
 export const geminiService = {
   async chat(messages: { role: 'user' | 'model', parts: { text: string }[] }[], systemInstruction?: string) {
     return withRetry(async () => {
+      // Filter out empty parts to avoid API errors
+      const sanitizedMessages = messages.map(m => ({
+        ...m,
+        parts: m.parts.filter(p => p.text && p.text.trim() !== '')
+      })).filter(m => m.parts.length > 0);
+
       const response = await ai.models.generateContent({
         model: "gemini-3-flash-preview",
-        contents: messages,
+        contents: sanitizedMessages,
         config: {
           systemInstruction,
         }
@@ -38,14 +38,17 @@ export const geminiService = {
     });
   },
 
-  async chatStream(messages: any[], systemInstruction?: string) {
+  async chatStream(messages: { role: 'user' | 'model', parts: { text: string }[] }[], systemInstruction?: string) {
     return withRetry(async () => {
+      // Filter out empty parts to avoid API errors
+      const sanitizedMessages = messages.map(m => ({
+        ...m,
+        parts: m.parts.filter(p => p.text && p.text.trim() !== '')
+      })).filter(m => m.parts.length > 0);
+
       return ai.models.generateContentStream({
         model: "gemini-3-flash-preview",
-        contents: messages.map(m => ({
-          role: m.role === 'assistant' ? 'model' : 'user',
-          parts: [{ text: m.content }]
-        })),
+        contents: sanitizedMessages,
         config: {
           systemInstruction,
         }
@@ -84,11 +87,9 @@ export const geminiService = {
   },
 
   async analyzeMultipleFilesStream(files: { data: string, mimeType: string }[], prompt: string, systemInstruction?: string, useSearch = false) {
-    console.log(`[GeminiService] Analyzing ${files.length} files. Search enabled: ${useSearch}`);
     const parts: any[] = [{ text: prompt }];
     
     files.forEach((f, i) => {
-      console.log(`[GeminiService] File ${i+1}: ${f.mimeType}, size: ${f.data.length} chars`);
       parts.push({
         inlineData: {
           mimeType: f.mimeType,
@@ -98,12 +99,12 @@ export const geminiService = {
     });
 
     return withRetry(async () => {
-      console.log('[GeminiService] Calling generateContentStream...');
       return ai.models.generateContentStream({
         model: "gemini-3-flash-preview",
         contents: [
           {
-            parts
+            role: 'user',
+            parts: parts.filter(p => (p.text && p.text.trim() !== '') || p.inlineData)
           }
         ],
         config: {
@@ -115,8 +116,6 @@ export const geminiService = {
   },
 
   async analyzeLargeFilesStream(files: File[], prompt: string, systemInstruction: string, language: string, link?: string, useSearch?: boolean) {
-    console.log(`[GeminiService] Analyzing ${files.length} files. Link: ${link}, Search: ${useSearch}`);
-    
     const parts: any[] = [{ text: prompt }];
     
     if (link) {
@@ -146,10 +145,9 @@ export const geminiService = {
     parts.push(...fileParts);
 
     return withRetry(async () => {
-      console.log('[GeminiService] Calling generateContentStream...');
       return ai.models.generateContentStream({
         model: "gemini-3-flash-preview",
-        contents: [{ role: 'user', parts }],
+        contents: [{ role: 'user', parts: parts.filter(p => (p.text && p.text.trim() !== '') || p.inlineData) }],
         config: {
           systemInstruction: systemInstruction + ` Respond in ${language}.`,
           tools: useSearch ? [{ googleSearch: {} }] : undefined,

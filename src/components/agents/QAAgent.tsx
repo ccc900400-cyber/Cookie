@@ -14,9 +14,13 @@ import { storageService } from '../../services/storageService';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
+import { GoogleGenAI } from "@google/genai";
+
 interface QAAgentProps {
   settings: AppSettings;
 }
+
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
 export default function QAAgent({ settings }: QAAgentProps) {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -41,7 +45,7 @@ export default function QAAgent({ settings }: QAAgentProps) {
           setMessages(savedMessages);
         }
       } catch (e) {
-        console.error('Failed to load messages from IndexedDB:', e);
+        // Silent fail
       } finally {
         isLoaded.current = true;
       }
@@ -55,8 +59,8 @@ export default function QAAgent({ settings }: QAAgentProps) {
         const todayStr = now.toISOString().split('T')[0];
         
         if (!force) {
-          const cached = localStorage.getItem('hot_suggestions');
-          const cachedDate = localStorage.getItem('hot_suggestions_date');
+          const cached = localStorage.getItem(`hot_suggestions_${settings.language}`);
+          const cachedDate = localStorage.getItem(`hot_suggestions_date_${settings.language}`);
           
           if (cached && cachedDate === todayStr) {
             setHotSuggestions(JSON.parse(cached));
@@ -68,7 +72,7 @@ export default function QAAgent({ settings }: QAAgentProps) {
         const prompt = `请提供4个当前2027年中国大陆的实时热门话题或人们今天在搜的热点。
         要求：
         1. 必须是2027年中国大陆真实发生或备受关注的热点。
-        2. 语言使用${settings.language === 'en' ? '英文' : '中文'}。
+        2. 语言使用${settings.language === 'en' ? '英文' : settings.language === 'zh-TW' ? '繁体中文' : '简体中文'}。
         3. 每个话题极其简短（不超过15个字）。
         4. 以纯JSON数组格式返回，例如：["2027热点1", "2027热点2", "2027热点3", "2027热点4"]。
         5. 不要包含任何Markdown格式或额外文字。`;
@@ -80,11 +84,10 @@ export default function QAAgent({ settings }: QAAgentProps) {
         if (Array.isArray(suggestions) && suggestions.length >= 4) {
           const sliced = suggestions.slice(0, 4);
           setHotSuggestions(sliced);
-          localStorage.setItem('hot_suggestions', JSON.stringify(sliced));
-          localStorage.setItem('hot_suggestions_date', todayStr);
+          localStorage.setItem(`hot_suggestions_${settings.language}`, JSON.stringify(sliced));
+          localStorage.setItem(`hot_suggestions_date_${settings.language}`, todayStr);
         }
       } catch (e) {
-        console.error('Failed to fetch hot suggestions:', e);
         if (hotSuggestions.length === 0) {
           setHotSuggestions(t.qaSuggestions);
         }
@@ -99,7 +102,7 @@ export default function QAAgent({ settings }: QAAgentProps) {
   useEffect(() => {
     if (isLoaded.current) {
       storageService.saveAllChatMessages(messages).catch(e => {
-        console.error('Failed to save messages to IndexedDB:', e);
+        // Silent fail
       });
     }
   }, [messages]);
@@ -121,7 +124,7 @@ export default function QAAgent({ settings }: QAAgentProps) {
         const prompt = `请提供4个当前2027年中国大陆的实时热门话题或人们今天在搜的热点。
         要求：
         1. 必须是2027年中国大陆真实发生或备受关注的热点。
-        2. 语言使用${settings.language === 'en' ? '英文' : '中文'}。
+        2. 语言使用${settings.language === 'en' ? '英文' : settings.language === 'zh-TW' ? '繁体中文' : '简体中文'}。
         3. 每个话题极其简短（不超过15个字）。
         4. 以纯JSON数组格式返回，例如：["2027热点1", "2027热点2", "2027热点3", "2027热点4"]。
         5. 不要包含任何Markdown格式或额外文字。`;
@@ -133,11 +136,11 @@ export default function QAAgent({ settings }: QAAgentProps) {
         if (Array.isArray(suggestions) && suggestions.length >= 4) {
           const sliced = suggestions.slice(0, 4);
           setHotSuggestions(sliced);
-          localStorage.setItem('hot_suggestions', JSON.stringify(sliced));
-          localStorage.setItem('hot_suggestions_date', todayStr);
+          localStorage.setItem(`hot_suggestions_${settings.language}`, JSON.stringify(sliced));
+          localStorage.setItem(`hot_suggestions_date_${settings.language}`, todayStr);
         }
       } catch (e) {
-        console.error('Failed to fetch hot suggestions:', e);
+        // Silent fail
       } finally {
         setIsFetchingSuggestions(false);
       }
@@ -147,7 +150,7 @@ export default function QAAgent({ settings }: QAAgentProps) {
     try {
       await storageService.clearChat();
     } catch (e) {
-      console.error('Failed to clear chat history:', e);
+      // Silent fail
     }
     setTimeout(() => setIsRefreshing(false), 500);
   };
@@ -196,13 +199,14 @@ export default function QAAgent({ settings }: QAAgentProps) {
       setMessages(prev => [...prev, assistantMessage]);
 
       let fullContent = "";
-      for await (const chunk of stream) {
-        const chunkText = chunk.text;
-        fullContent += chunkText;
-        setMessages(prev => prev.map(m => m.id === assistantMessageId ? { ...m, content: fullContent } : m));
-      }
+        for await (const chunk of stream) {
+          const chunkText = chunk.text;
+          fullContent += chunkText;
+          // Remove ** from content as requested
+          const cleanContent = fullContent.replace(/\*\*/g, '');
+          setMessages(prev => prev.map(m => m.id === assistantMessageId ? { ...m, content: cleanContent } : m));
+        }
     } catch (error) {
-      console.error('Chat error:', error);
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
@@ -222,19 +226,15 @@ export default function QAAgent({ settings }: QAAgentProps) {
   };
 
   return (
-    <div className="flex flex-col h-full max-w-5xl mx-auto p-4 md:p-6">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-6 md:pl-0 pl-14">
+    <div className="flex flex-col h-full bg-[#F8F9FA] dark:bg-[#000000] overflow-hidden">
+      {/* Top Navigation Bar */}
+      <div className="h-16 border-b bg-white/80 dark:bg-black/80 backdrop-blur-md flex items-center justify-between px-6 shrink-0 z-10">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full bg-blue-500/10 flex items-center justify-center text-blue-600">
-            <Bot size={24} />
+          <div className="w-8 h-8 rounded-lg bg-[#007AFF] flex items-center justify-center text-white">
+            <MessageSquare size={18} />
           </div>
-          <div>
-            <h2 className="text-xl font-bold">{t.qa}</h2>
-            <div className="flex items-center gap-2">
-              <Badge variant="secondary" className="text-[10px] px-1.5 py-0">Gemini 3 Flash</Badge>
-            </div>
-          </div>
+          <h1 className="font-bold text-lg tracking-tight">{t.qa}</h1>
+          <Badge variant="secondary" className="text-[10px] px-1.5 py-0 ml-2">Gemini 3 Flash</Badge>
         </div>
         <div className="flex items-center gap-2">
           <Button 
@@ -249,17 +249,19 @@ export default function QAAgent({ settings }: QAAgentProps) {
         </div>
       </div>
 
-      {/* Messages */}
-      <ScrollArea className="flex-1 min-h-0 pr-4">
-        <div className="space-y-6 pb-4">
-          {messages.length === 0 && (
-            <div className="flex flex-col items-center justify-center h-[400px] text-center space-y-4">
-              <div className="w-16 h-16 rounded-2xl bg-accent flex items-center justify-center text-muted-foreground">
-                <MessageSquare size={32} />
-              </div>
-              <div className="space-y-2">
-                <h3 className="text-lg font-medium">{t.startChat}</h3>
-              </div>
+      <div className="flex-1 flex flex-col overflow-hidden w-full p-4 md:p-6">
+        <div className="max-w-5xl mx-auto w-full flex-1 flex flex-col overflow-hidden">
+          {/* Messages */}
+          <ScrollArea className="flex-1 min-h-0 pr-4">
+          <div className="space-y-6 pb-4">
+            {messages.length === 0 && (
+              <div className="flex flex-col items-center justify-center h-[400px] text-center space-y-4">
+                <div className="w-20 h-20 rounded-3xl bg-accent flex items-center justify-center text-muted-foreground shadow-sm">
+                  <MessageSquare size={40} />
+                </div>
+                <div className="space-y-2">
+                  <h3 className="text-xl font-bold tracking-tight">{t.startChat}</h3>
+                </div>
               <div className="grid grid-cols-2 gap-2 max-w-md w-full mt-4">
                 {(isFetchingSuggestions && hotSuggestions.length === 0 ? Array(4).fill('') : (hotSuggestions.length > 0 ? hotSuggestions : t.qaSuggestions)).map((suggestion, idx) => (
                   <Button 
@@ -291,20 +293,19 @@ export default function QAAgent({ settings }: QAAgentProps) {
               )}
             >
               <div className={cn(
-                "w-8 h-8 rounded-full flex items-center justify-center shrink-0",
-                message.role === 'user' ? "bg-primary text-primary-foreground" : "bg-blue-500/10 text-blue-600"
-              )}>
-                {message.role === 'user' ? <User size={16} /> : <Bot size={16} />}
-              </div>
-              <div className={cn(
-                "flex flex-col max-w-[80%]",
+                "flex flex-col max-w-[90%]",
                 message.role === 'user' ? "items-end" : "items-start"
               )}>
                 <Card className={cn(
-                  "px-4 py-3 shadow-sm",
-                  message.role === 'user' ? "bg-primary text-primary-foreground rounded-tr-none" : "bg-card rounded-tl-none"
+                  "px-4 py-2.5 shadow-none border-none",
+                  message.role === 'user' 
+                    ? "bg-[#007AFF] text-white rounded-[20px] rounded-tr-[4px]" 
+                    : "bg-[#E9E9EB] dark:bg-[#3A3A3C] text-black dark:text-white rounded-[20px] rounded-tl-[4px]"
                 )}>
-                  <div className="prose prose-sm dark:prose-invert max-w-none">
+                  <div className={cn(
+                    "prose prose-sm max-w-none",
+                    message.role === 'user' ? "prose-invert text-white" : "dark:prose-invert"
+                  )}>
                     <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>
                   </div>
                 </Card>
@@ -324,9 +325,6 @@ export default function QAAgent({ settings }: QAAgentProps) {
           ))}
           {isLoading && (
             <div className="flex gap-4">
-              <div className="w-8 h-8 rounded-full bg-blue-500/10 flex items-center justify-center text-blue-600">
-                <Bot size={16} />
-              </div>
               <div className="flex items-center gap-1 px-4 py-3 bg-card rounded-xl rounded-tl-none shadow-sm">
                 <motion.div
                   animate={{ scale: [1, 1.2, 1] }}
@@ -351,19 +349,23 @@ export default function QAAgent({ settings }: QAAgentProps) {
       </ScrollArea>
 
       {/* Input */}
-      <div className="mt-4 relative">
-        <div className="flex items-center gap-2 p-2 bg-card border rounded-2xl shadow-lg focus-within:ring-2 focus-within:ring-primary/20 transition-all">
+      <div className="mt-4 relative w-full max-w-5xl mx-auto px-4 md:px-0">
+        <div className="flex items-center gap-2 p-1.5 bg-[#F2F2F7] dark:bg-[#1C1C1E] rounded-full border-none focus-within:ring-1 focus-within:ring-primary/20 transition-all">
           <Input
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleSend()}
             placeholder={t.chatPlaceholder}
-            className="border-none bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0 px-1"
+            className="border-none bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0 px-4 h-9"
           />
           <Button 
             onClick={handleSend} 
             disabled={!input.trim() || isLoading}
-            className="shrink-0 rounded-xl px-3"
+            className={cn(
+              "shrink-0 rounded-full w-8 h-8 p-0 flex items-center justify-center transition-all",
+              input.trim() ? "bg-[#007AFF] text-white" : "bg-transparent text-muted-foreground"
+            )}
+            variant={input.trim() ? "default" : "ghost"}
           >
             {isLoading ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
           </Button>
@@ -372,6 +374,8 @@ export default function QAAgent({ settings }: QAAgentProps) {
           {t.aiDisclaimer}
         </p>
       </div>
+      </div>
     </div>
+  </div>
   );
 }

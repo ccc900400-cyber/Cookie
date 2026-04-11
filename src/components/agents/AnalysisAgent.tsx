@@ -30,6 +30,7 @@ import { storageService } from '../../services/storageService';
 import { Label } from '@/components/ui/label';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { Document, Packer, Paragraph, TextRun } from 'docx';
 
 // Error Boundary Component
 class ErrorBoundary extends Component<{ children: ReactNode, fallback: ReactNode }, { hasError: boolean }> {
@@ -43,7 +44,7 @@ class ErrorBoundary extends Component<{ children: ReactNode, fallback: ReactNode
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error("AnalysisAgent Error Boundary caught an error", error, errorInfo);
+    // Error caught by boundary
   }
 
   render() {
@@ -81,7 +82,7 @@ export default function AnalysisAgent({ settings }: AnalysisAgentProps) {
           setHistory(savedHistory);
         }
       } catch (e) {
-        console.error('Failed to load history from IndexedDB:', e);
+        // Silent fail
       } finally {
         isLoaded.current = true;
       }
@@ -108,24 +109,69 @@ export default function AnalysisAgent({ settings }: AnalysisAgentProps) {
     try {
       await storageService.clearAnalysis();
     } catch (e) {
-      console.error('Failed to clear analysis history:', e);
+      // Silent fail
     }
     setTimeout(() => setIsRefreshing(false), 500);
   };
 
-  const exportToWord = () => {
+  const exportToWord = async () => {
     if (!analysisResult) return;
-    // Remove Markdown characters * and #
-    const cleanResult = analysisResult.replace(/[*#]/g, '');
-    const blob = new Blob([cleanResult], { type: 'application/msword' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `Analysis_Report_${new Date().getTime()}.doc`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    try {
+      const doc = new Document({
+        sections: [{
+          properties: {},
+          children: [
+            new Paragraph({
+              children: [
+                new TextRun({
+                  text: t.reportTitle,
+                  bold: true,
+                  size: 32,
+                }),
+              ],
+            }),
+            new Paragraph({
+              children: [
+                new TextRun({
+                  text: `日期: ${new Date().toLocaleString()}`,
+                  size: 24,
+                }),
+              ],
+            }),
+            new Paragraph({
+              children: [
+                new TextRun({
+                  text: "\n",
+                }),
+              ],
+            }),
+            ...analysisResult.split('\n').map(line => 
+              new Paragraph({
+                children: [
+                  new TextRun({
+                    text: line.replace(/[*#]/g, ''),
+                    size: 24,
+                  }),
+                ],
+              })
+            ),
+          ],
+        }],
+      });
+
+      const blob = await Packer.toBlob(doc);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Analysis_Report_${new Date().getTime()}.docx`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error("Export error:", error);
+      alert("导出 Word 失败。");
+    }
   };
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
@@ -133,7 +179,6 @@ export default function AnalysisAgent({ settings }: AnalysisAgentProps) {
     const newFiles = acceptedFiles
       .filter(file => {
         if (file.size > MAX_SINGLE_FILE_SIZE) {
-          console.warn(`File ${file.name} ignored because it exceeds 100MB limit.`);
           return false;
         }
         return true;
@@ -177,7 +222,6 @@ export default function AnalysisAgent({ settings }: AnalysisAgentProps) {
     setProgress(t.analyzing);
 
     try {
-      console.log('[AnalysisAgent] Starting analysis...');
       const prompt = t.analysisPrompt;
       const systemInstruction = t.analysisSystem;
       const language = settings.language === 'en' ? 'English' : settings.language === 'zh-TW' ? 'Traditional Chinese' : 'Simplified Chinese';
@@ -185,20 +229,17 @@ export default function AnalysisAgent({ settings }: AnalysisAgentProps) {
       let stream;
       if (files.length > 0) {
         setProgress(t.analyzing);
-        console.log(`[AnalysisAgent] Analyzing ${files.length} files...`);
         
         const rawFiles = files.map(f => f.file).filter((f): f is File => !!f);
         stream = await geminiService.analyzeLargeFilesStream(rawFiles, prompt, systemInstruction, language);
       } else {
         setProgress(t.fetchingLink);
-        console.log(`[AnalysisAgent] Analyzing link: ${link}`);
         // Use server for link analysis to keep API key hidden
         stream = await geminiService.analyzeLargeFilesStream([], prompt, systemInstruction, language, link, true);
       }
 
       let fullResult = "";
       setProgress(t.analyzing);
-      console.log('[AnalysisAgent] Iterating stream...');
       
       try {
         for await (const chunk of stream) {
@@ -250,7 +291,13 @@ export default function AnalysisAgent({ settings }: AnalysisAgentProps) {
       <div className="flex flex-col h-full">
       {/* Top Bar */}
       <div className="flex flex-col sm:flex-row items-center justify-between px-4 md:px-8 py-3 md:py-4 border-b bg-card/50 backdrop-blur-md sticky top-0 z-10 gap-3 md:pl-8 pl-14">
-        <div className="flex items-center gap-2 overflow-x-auto w-full sm:w-auto pb-1 sm:pb-0 scrollbar-hide">
+        <div className="flex items-center gap-4 w-full sm:w-auto overflow-x-auto pb-1 sm:pb-0 scrollbar-hide">
+          <div className="flex items-center gap-2 shrink-0 mr-2">
+            <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center text-white shadow-sm">
+              <Sparkles size={18} />
+            </div>
+            <span className="font-bold text-lg tracking-tight">{t.analysis}</span>
+          </div>
           <div className="flex p-1 bg-muted rounded-xl shrink-0">
             <button 
               onClick={() => setActiveTab('upload')}
@@ -296,7 +343,7 @@ export default function AnalysisAgent({ settings }: AnalysisAgentProps) {
             disabled={isProcessing || (files.length === 0 && !link)}
             className="rounded-xl shadow-lg shadow-primary/20 h-9 md:h-10 px-3 md:px-4"
           >
-            {isProcessing ? <Loader2 className="md:mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="md:mr-2 h-4 w-4" />}
+            {isProcessing && <Loader2 className="md:mr-2 h-4 w-4 animate-spin" />}
             <span className="hidden md:inline">{isProcessing ? t.analyzing : t.startAnalyze}</span>
             <span className="md:hidden text-xs">{isProcessing ? '' : t.startAnalyze}</span>
           </Button>
@@ -304,7 +351,7 @@ export default function AnalysisAgent({ settings }: AnalysisAgentProps) {
       </div>
 
       <ScrollArea className="flex-1 min-h-0">
-        <div className="p-8 max-w-6xl mx-auto">
+        <div className="p-4 md:p-8 max-w-6xl mx-auto">
           <AnimatePresence mode="wait">
             {activeTab === 'upload' && (
               <motion.div
@@ -324,16 +371,15 @@ export default function AnalysisAgent({ settings }: AnalysisAgentProps) {
                     <div 
                       {...getRootProps()} 
                       className={cn(
-                        "border-2 border-dashed rounded-3xl p-12 flex flex-col items-center justify-center text-center transition-all cursor-pointer",
+                        "border-2 border-dashed rounded-3xl p-8 md:p-12 flex flex-col items-center justify-center text-center transition-all cursor-pointer",
                         isDragActive ? "border-primary bg-primary/5 scale-[0.99]" : "border-muted-foreground/20 hover:border-primary/50 hover:bg-accent/50"
                       )}
                     >
                       <input {...getInputProps()} />
-                      <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center text-primary mb-4">
+                      <div className="w-16 h-[60px] rounded-2xl bg-primary/10 flex items-center justify-center text-primary mb-4">
                         <Upload size={32} />
                       </div>
                       <p className="text-sm font-medium">{t.dropzoneText}</p>
-                      <p className="text-xs text-muted-foreground mt-2">{t.supportFormats}</p>
                     </div>
 
                     {files.length > 0 && (
@@ -365,7 +411,7 @@ export default function AnalysisAgent({ settings }: AnalysisAgentProps) {
                       <LinkIcon size={20} className="text-primary" />
                       {t.linkParsing}
                     </h3>
-                    <Card className="rounded-3xl overflow-hidden border-2 border-muted">
+                    <Card className="rounded-3xl overflow-hidden border-2 border-muted h-auto min-h-[200px] w-full max-w-md">
                       <CardContent className="p-6 space-y-4">
                         <div className="space-y-2">
                           <div className="flex items-center justify-between">
@@ -377,10 +423,9 @@ export default function AnalysisAgent({ settings }: AnalysisAgentProps) {
                               placeholder="https://example.com/video" 
                               value={link}
                               onChange={(e) => setLink(e.target.value)}
-                              className="rounded-xl"
+                              className="rounded-xl h-10"
                             />
                           </div>
-                          <p className="text-[10px] text-muted-foreground">{t.supportFormats}</p>
                         </div>
                       </CardContent>
                     </Card>

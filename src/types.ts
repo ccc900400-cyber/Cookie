@@ -1,4 +1,4 @@
-export type AgentType = 'analysis' | 'qa';
+export type AgentType = 'analysis' | 'qa' | 'minutes';
 
 export interface Message {
   id: string;
