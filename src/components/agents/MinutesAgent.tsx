@@ -2,13 +2,14 @@ import { motion, AnimatePresence } from 'motion/react';
 import { 
   Mic, FileText, Users, Lightbulb, CheckCircle2, Download, Copy, Check, 
   Loader2, StopCircle, Volume2, History, Trash2, Calendar, Clock, ChevronRight,
-  Play, Pause, Share2, MoreVertical, Settings2
+  Play, Pause, Share2, MoreVertical, Settings2, Headphones, DownloadCloud
 } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useTranslation } from '../../lib/i18n';
 import { AppSettings } from '../../types';
+import { storageService } from '../../services/storageService';
 import { cn } from '@/lib/utils';
 import ReactMarkdown from 'react-markdown';
 import { Document, Packer, Paragraph, TextRun } from 'docx';
@@ -28,6 +29,7 @@ interface RecordingSession {
   duration: string;
   summary: string;
   transcript: string;
+  audioBlob?: Blob;
 }
 
 export default function MinutesAgent({ settings }: MinutesAgentProps) {
@@ -42,33 +44,52 @@ export default function MinutesAgent({ settings }: MinutesAgentProps) {
   const [history, setHistory] = useState<RecordingSession[]>([]);
   const [selectedSession, setSelectedSession] = useState<RecordingSession | null>(null);
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
+  const [volume, setVolume] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
   
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const animationRef = useRef<number | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const recordingTimeRef = useRef(0);
+  const maxVolumeRef = useRef(0);
 
   const workflow = t.minutesWorkflow;
 
-  // Load history from localStorage on mount
+  // Load history from IndexedDB on mount
   useEffect(() => {
-    const savedHistory = localStorage.getItem('minutes_history');
-    if (savedHistory) {
-      setHistory(JSON.parse(savedHistory));
-    }
+    const loadHistory = async () => {
+      try {
+        const savedHistory = await storageService.getAllMinutes();
+        if (savedHistory) {
+          setHistory(savedHistory);
+        }
+      } catch (e) {
+        console.error("Failed to load history:", e);
+      }
+    };
+    loadHistory();
   }, []);
-
-  // Save history to localStorage
-  useEffect(() => {
-    localStorage.setItem('minutes_history', JSON.stringify(history));
-  }, [history]);
 
   // Recording Timer
   useEffect(() => {
     if (isRecording) {
+      recordingTimeRef.current = 0;
+      maxVolumeRef.current = 0;
       timerRef.current = setInterval(() => {
-        setRecordingTime(prev => prev + 1);
+        setRecordingTime(prev => {
+          const next = prev + 1;
+          recordingTimeRef.current = next;
+          return next;
+        });
+        if (isRecording) {
+          checkVolume();
+        }
       }, 1000);
     } else {
       if (timerRef.current) clearInterval(timerRef.current);
@@ -77,6 +98,24 @@ export default function MinutesAgent({ settings }: MinutesAgentProps) {
       if (timerRef.current) clearInterval(timerRef.current);
     };
   }, [isRecording]);
+
+  const checkVolume = () => {
+    if (!analyserRef.current) return;
+    const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount);
+    analyserRef.current.getByteTimeDomainData(dataArray);
+    
+    let sum = 0;
+    for (let i = 0; i < dataArray.length; i++) {
+      const amplitude = (dataArray[i] - 128) / 128;
+      sum += amplitude * amplitude;
+    }
+    const rms = Math.sqrt(sum / dataArray.length);
+    const volumeValue = Math.round(rms * 100);
+    setVolume(volumeValue);
+    if (volumeValue > maxVolumeRef.current) {
+      maxVolumeRef.current = volumeValue;
+    }
+  };
 
   // Waveform Animation
   useEffect(() => {
@@ -124,64 +163,29 @@ export default function MinutesAgent({ settings }: MinutesAgentProps) {
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
-  const recordingTimeRef = useRef(0);
-  const maxVolumeRef = useRef(0);
-  const audioContextRef = useRef<AudioContext | null>(null);
-
-  // Recording Timer
-  useEffect(() => {
-    if (isRecording) {
-      recordingTimeRef.current = 0;
-      timerRef.current = setInterval(() => {
-        setRecordingTime(prev => {
-          const next = prev + 1;
-          recordingTimeRef.current = next;
-          return next;
-        });
-      }, 1000);
-    } else {
-      if (timerRef.current) clearInterval(timerRef.current);
-    }
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-    };
-  }, [isRecording]);
-
   const toggleRecording = async () => {
     if (status === 'idle' || status === 'completed' || status === 'history') {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        const mediaRecorder = new MediaRecorder(stream);
+        streamRef.current = stream;
+
+        // Setup Audio Context for volume detection
+        const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+        const analyser = audioContext.createAnalyser();
+        const source = audioContext.createMediaStreamSource(stream);
+        source.connect(analyser);
+        analyser.fftSize = 256;
+        
+        audioContextRef.current = audioContext;
+        analyserRef.current = analyser;
+
+        const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') 
+          ? 'audio/webm;codecs=opus' 
+          : 'audio/webm';
+          
+        const mediaRecorder = new MediaRecorder(stream, { mimeType });
         mediaRecorderRef.current = mediaRecorder;
         audioChunksRef.current = [];
-
-        // Volume tracking
-        const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-        audioContextRef.current = audioContext;
-        
-        // Ensure context is running
-        if (audioContext.state === 'suspended') {
-          await audioContext.resume();
-        }
-
-        const source = audioContext.createMediaStreamSource(stream);
-        const analyser = audioContext.createAnalyser();
-        analyser.fftSize = 256;
-        source.connect(analyser);
-        const dataArray = new Uint8Array(analyser.frequencyBinCount);
-        maxVolumeRef.current = 0;
-
-        const checkVolume = () => {
-          if (mediaRecorder.state !== 'recording') return;
-          analyser.getByteFrequencyData(dataArray);
-          let currentMax = 0;
-          for (let i = 0; i < dataArray.length; i++) {
-            if (dataArray[i] > currentMax) currentMax = dataArray[i];
-          }
-          if (currentMax > maxVolumeRef.current) maxVolumeRef.current = currentMax;
-          requestAnimationFrame(checkVolume);
-        };
-        checkVolume();
 
         mediaRecorder.ondataavailable = (event) => {
           if (event.data.size > 0) {
@@ -190,48 +194,66 @@ export default function MinutesAgent({ settings }: MinutesAgentProps) {
         };
 
         mediaRecorder.onstop = async () => {
-          const finalTime = recordingTimeRef.current;
-          const finalMaxVolume = maxVolumeRef.current;
-
-          // Close audio context
-          if (audioContextRef.current) {
-            audioContextRef.current.close();
-            audioContextRef.current = null;
-          }
-
-          // Check if recording is too short or too quiet
-          // Lowered threshold to 10 for better sensitivity
-          if (finalTime < 2 || finalMaxVolume < 10) {
-            console.log(`Recording skipped: time=${finalTime}s, maxVolume=${finalMaxVolume}`);
+          const blob = new Blob(audioChunksRef.current, { type: mimeType });
+          setAudioBlob(blob);
+          
+          // Check if recording is valid (at least 1 second and some sound)
+          if (recordingTimeRef.current < 1 || maxVolumeRef.current < 2) {
+            console.log(`Recording skipped: time=${recordingTimeRef.current}s, maxVolume=${maxVolumeRef.current}`);
             setStatus('idle');
+            setIsRecording(false);
+            cleanupAudio();
             return;
           }
-
-          const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-          setAudioBlob(blob);
-          await processAudio(blob, finalTime);
+          
+          await processAudio(blob);
         };
 
         setIsRecording(true);
         setStatus('recording');
         setSummary('');
         setRecordingTime(0);
-        recordingTimeRef.current = 0;
         mediaRecorder.start();
       } catch (err) {
         console.error("Failed to start recording:", err);
         alert(t.micPermissionError);
       }
     } else if (status === 'recording') {
-      setIsRecording(false);
-      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-        mediaRecorderRef.current.stop();
-        mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
-      }
+      stopRecording();
     }
   };
 
-  const processAudio = async (blob: Blob, duration: number) => {
+  const stopRecording = () => {
+    setIsRecording(false);
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      mediaRecorderRef.current.stop();
+    }
+    cleanupAudio();
+  };
+
+  const handleCancelRecording = () => {
+    setIsRecording(false);
+    setStatus('idle');
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      mediaRecorderRef.current.stop();
+    }
+    cleanupAudio();
+    audioChunksRef.current = [];
+  };
+
+  const cleanupAudio = () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current = null;
+    }
+    if (audioContextRef.current) {
+      audioContextRef.current.close();
+      audioContextRef.current = null;
+    }
+    analyserRef.current = null;
+  };
+
+  const processAudio = async (blob: Blob) => {
     setStatus('processing');
     try {
       // Convert blob to base64
@@ -258,16 +280,20 @@ export default function MinutesAgent({ settings }: MinutesAgentProps) {
                 }
               },
               {
-                text: "请先将这段音频完整转录为文字，然后根据转录内容生成一份结构化的会议纪要。请严格按照以下格式输出：\n\n[TRANSCRIPT]\n(此处为完整转录文字)\n\n[SUMMARY]\n(此处为结构化会议纪要，包含会议主题、核心观点、结论与待办事项)\n\n如果音频中没有任何人说话或者只有噪音，请只回复：'未检测到有效语音内容，无法生成纪要。'"
+                text: "请作为一名专业的会议记录员，对这段音频进行深度分析。你的任务包括：\n\n1. 完整转录：将音频内容完整转录为文字，并尽可能区分不同的发言人（如：发言人1、发言人2等）。\n2. 智能摘要：基于转录内容，生成一份结构化、专业且易于阅读的会议纪要。纪要应包含：\n   - 会议主题：简明扼要地概括会议核心内容。\n   - 核心观点：列出各发言人的主要论点和贡献。\n   - 结论与共识：总结会议达成的最终决定或共识。\n   - 待办事项：清晰列出后续行动项，并注明负责人（如果提及）和截止日期。\n\n请严格按照以下格式输出：\n\n[TRANSCRIPT]\n(此处为带发言人区分的完整转录文字)\n\n[SUMMARY]\n(此处为结构化会议纪要)\n\n注意：输出内容中严禁使用双星号（**）进行加粗。如果音频中没有任何人说话或者只有噪音，请只回复：'未检测到有效语音内容，无法生成纪要。'"
               }
             ]
           }
         ]
       });
 
-      const resultText = response.text || t.error;
+      let resultText = response.text || t.error;
+      
+      // Remove any double asterisks from the result
+      resultText = resultText.replace(/\*\*/g, '');
       
       if (resultText.includes("未检测到有效语音内容")) {
+        alert(t.noSpeechError);
         setStatus('idle');
         return;
       }
@@ -291,15 +317,18 @@ export default function MinutesAgent({ settings }: MinutesAgentProps) {
         id: Date.now().toString(),
         title: `${t.minutes} ${new Date().toLocaleDateString()}`,
         date: new Date().toLocaleString(),
-        duration: formatTime(duration),
+        duration: formatTime(recordingTimeRef.current),
         summary: finalSummary,
-        transcript: finalTranscript
+        transcript: finalTranscript,
+        audioBlob: blob
       };
+      await storageService.saveMinutes(newSession);
       setHistory(prev => [newSession, ...prev]);
       setSelectedSession(newSession);
       setStatus('completed');
     } catch (error) {
       console.error("Processing error:", error);
+      alert(t.processingError);
       setStatus('idle');
     }
   };
@@ -396,23 +425,65 @@ export default function MinutesAgent({ settings }: MinutesAgentProps) {
     }
   };
 
-  const deleteSession = (id: string) => {
-    setHistory(prev => prev.filter(s => s.id !== id));
-    if (selectedSession?.id === id) {
-      setSelectedSession(null);
-      setStatus('idle');
+  const deleteSession = async (id: string) => {
+    try {
+      await storageService.deleteMinutes(id);
+      setHistory(prev => prev.filter(s => s.id !== id));
+      if (selectedSession?.id === id) {
+        setSelectedSession(null);
+        setStatus('idle');
+      }
+    } catch (e) {
+      console.error("Failed to delete session:", e);
     }
   };
+
+  const playAudio = () => {
+    if (!selectedSession?.audioBlob) return;
+    if (isPlaying) {
+      audioPlayerRef.current?.pause();
+      setIsPlaying(false);
+    } else {
+      if (!audioPlayerRef.current) {
+        const url = URL.createObjectURL(selectedSession.audioBlob);
+        audioPlayerRef.current = new Audio(url);
+        audioPlayerRef.current.onended = () => setIsPlaying(false);
+      }
+      audioPlayerRef.current.play();
+      setIsPlaying(true);
+    }
+  };
+
+  const downloadAudio = () => {
+    if (!selectedSession?.audioBlob) return;
+    const url = URL.createObjectURL(selectedSession.audioBlob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Audio_${selectedSession.title}.webm`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (audioPlayerRef.current) {
+        audioPlayerRef.current.pause();
+        audioPlayerRef.current = null;
+      }
+    };
+  }, [selectedSession]);
 
   return (
     <div className="h-full flex flex-col bg-[#F8F9FA] dark:bg-[#000000] overflow-hidden">
       {/* Top Navigation Bar */}
-      <div className="h-16 border-b bg-white/80 dark:bg-black/80 backdrop-blur-md flex items-center justify-between px-6 shrink-0 z-10">
+      <div className="h-16 border-b bg-white/80 dark:bg-black/80 backdrop-blur-md flex items-center justify-between px-2 md:px-8 shrink-0 z-10">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-[#007AFF] flex items-center justify-center text-white">
-            <Volume2 size={18} />
+          <div className="w-8 h-8 rounded-lg bg-primary hidden md:flex items-center justify-center text-white shadow-sm">
+            <Mic size={18} />
           </div>
-          <h1 className="font-bold text-lg tracking-tight">{t.minutes}</h1>
+          <h1 className="font-bold text-lg tracking-tight ml-12 md:ml-0">{t.minutes}</h1>
         </div>
         <div className="flex items-center gap-2">
           <Button 
@@ -527,44 +598,51 @@ export default function MinutesAgent({ settings }: MinutesAgentProps) {
                 exit={{ opacity: 0, scale: 1.05 }}
                 className="absolute inset-0 bg-[#F8F9FA]/95 dark:bg-black/95 backdrop-blur-xl z-20 flex flex-col items-center justify-center p-8 text-center"
               >
-                <div className="max-w-xl w-full space-y-10">
-                  <div className="relative mx-auto w-56 h-56">
+                <div className="max-w-2xl w-full space-y-8 md:space-y-12">
+                  <div className="relative mx-auto w-48 h-48 md:w-64 md:h-64">
                     <motion.div
                       animate={{ 
                         scale: status === 'recording' ? [1, 1.2, 1] : 1,
                         opacity: status === 'recording' ? [0.3, 0.1, 0.3] : 0.1
                       }}
                       transition={{ repeat: Infinity, duration: 2 }}
-                      className="absolute inset-0 bg-primary rounded-full blur-3xl"
+                      className="absolute inset-0 bg-primary rounded-full blur-2xl md:blur-3xl"
                     />
                     <div className="relative w-full h-full rounded-full bg-white dark:bg-[#1C1C1E] shadow-2xl flex flex-col items-center justify-center border border-primary/10">
                       {status === 'recording' ? (
                         <>
-                          <div className="absolute top-10 text-primary/40 font-bold uppercase tracking-widest text-[10px]">{t.recordingStatus}</div>
-                          <canvas ref={canvasRef} width={200} height={80} className="w-32 h-12 mb-2" />
-                          <div className="text-4xl font-mono font-bold tracking-tighter text-primary">
+                          <div className="absolute top-8 md:top-12 text-primary/40 font-bold uppercase tracking-widest text-[10px]">{t.recordingStatus}</div>
+                          <canvas ref={canvasRef} width={200} height={80} className="w-32 h-12 md:w-40 md:h-16 mb-2 md:mb-4" />
+                          <div className="w-full max-w-[120px] md:max-w-[160px] h-1.5 bg-muted rounded-full overflow-hidden mb-4">
+                            <motion.div 
+                              initial={{ width: 0 }}
+                              animate={{ width: `${Math.min(100, volume * 2)}%` }}
+                              className="h-full bg-primary"
+                            />
+                          </div>
+                          <div className="text-4xl md:text-5xl font-mono font-bold tracking-tighter text-primary">
                             {formatTime(recordingTime)}
                           </div>
                         </>
                       ) : (
-                        <div className="flex flex-col items-center gap-4">
+                        <div className="flex flex-col items-center gap-4 md:gap-6">
                           <div className="relative">
-                            <Loader2 size={48} className="text-primary animate-spin" />
+                            <Loader2 size={48} className="text-primary animate-spin md:w-16 md:h-16" />
                             <div className="absolute inset-0 flex items-center justify-center">
-                              <div className="w-1.5 h-1.5 bg-primary rounded-full animate-pulse" />
+                              <div className="w-1.5 h-1.5 md:w-2 md:h-2 bg-primary rounded-full animate-pulse" />
                             </div>
                           </div>
-                          <span className="font-bold text-lg text-primary tracking-tight">{t.aiAnalyzing}</span>
+                          <span className="font-bold text-lg md:text-xl text-primary tracking-tight">{t.aiAnalyzing}</span>
                         </div>
                       )}
                     </div>
                   </div>
 
-                  <div className="space-y-3">
-                    <h3 className="text-2xl font-bold tracking-tight">
+                  <div className="space-y-3 md:space-y-4">
+                    <h3 className="text-2xl md:text-4xl font-bold tracking-tight">
                       {status === 'recording' ? t.listening : t.generatingMinutes}
                     </h3>
-                    <p className="text-muted-foreground text-base max-w-md mx-auto leading-relaxed">
+                    <p className="text-muted-foreground text-base md:text-xl max-w-lg mx-auto leading-relaxed px-4">
                       {status === 'recording' 
                         ? t.listeningDesc 
                         : t.generatingMinutesDesc}
@@ -572,14 +650,23 @@ export default function MinutesAgent({ settings }: MinutesAgentProps) {
                   </div>
 
                   {status === 'recording' && (
-                    <Button 
-                      onClick={toggleRecording}
-                      variant="destructive"
-                      className="rounded-full h-14 px-10 text-lg font-bold shadow-2xl shadow-red-500/20 gap-3 hover:scale-105 transition-transform"
-                    >
-                      <StopCircle size={24} />
-                      {t.stopAndGenerate}
-                    </Button>
+                    <div className="flex flex-col md:flex-row gap-4 justify-center">
+                      <Button 
+                        onClick={toggleRecording}
+                        className="rounded-full h-16 md:h-20 px-8 md:px-12 text-lg md:text-xl font-bold shadow-2xl shadow-primary/20 gap-3 md:gap-4 hover:scale-105 transition-transform"
+                      >
+                        <StopCircle size={28} className="md:w-8 md:h-8" />
+                        {t.stopAndGenerate}
+                      </Button>
+                      <Button 
+                        onClick={handleCancelRecording}
+                        variant="outline"
+                        className="rounded-full h-16 md:h-20 px-8 md:px-12 text-lg md:text-xl font-bold gap-3 md:gap-4 hover:bg-destructive/10 hover:text-destructive transition-colors"
+                      >
+                        <Trash2 size={28} className="md:w-8 md:h-8" />
+                        {t.cancel}
+                      </Button>
+                    </div>
                   )}
                 </div>
               </motion.div>
@@ -590,39 +677,61 @@ export default function MinutesAgent({ settings }: MinutesAgentProps) {
                 key="result-view"
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="max-w-4xl mx-auto p-4 md:p-8 space-y-6 pb-32"
+                className="max-w-4xl mx-auto p-4 md:p-8 space-y-6 md:space-y-8 pb-32"
               >
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                   <div>
-                    <h2 className="text-xl md:text-2xl font-bold tracking-tight">{selectedSession?.title}</h2>
-                    <div className="flex flex-wrap items-center gap-3 mt-1.5 text-xs text-muted-foreground">
-                      <span className="flex items-center gap-1"><Calendar size={13} /> {selectedSession?.date}</span>
-                      <span className="flex items-center gap-1"><Clock size={13} /> {selectedSession?.duration}</span>
+                    <h2 className="text-xl md:text-3xl font-bold tracking-tight">{selectedSession?.title}</h2>
+                    <div className="flex items-center gap-3 md:gap-4 mt-1.5 md:mt-2 text-xs md:text-sm text-muted-foreground">
+                      <span className="flex items-center gap-1"><Calendar size={14} /> {selectedSession?.date}</span>
+                      <span className="flex items-center gap-1"><Clock size={14} /> {selectedSession?.duration}</span>
                     </div>
                   </div>
                   <div className="flex flex-wrap gap-2">
+                    {selectedSession?.audioBlob && (
+                      <>
+                        <Button 
+                          variant="outline" 
+                          size="sm" 
+                          onClick={playAudio} 
+                          className={cn("rounded-full gap-2 h-9", isPlaying && "bg-primary/10 text-primary border-primary/50")}
+                        >
+                          {isPlaying ? <Pause size={16} /> : <Play size={16} />}
+                          <span className="hidden sm:inline">{isPlaying ? t.pauseAudio : t.playAudio}</span>
+                        </Button>
+                        <Button 
+                          variant="outline" 
+                          size="sm" 
+                          onClick={downloadAudio} 
+                          className="rounded-full gap-2 h-9"
+                        >
+                          <DownloadCloud size={16} />
+                          <span className="hidden sm:inline">{t.downloadAudio}</span>
+                        </Button>
+                      </>
+                    )}
                     <Button 
                       variant="outline" 
                       size="sm" 
                       onClick={() => handleCopy(activeResultTab === 'summary' ? (selectedSession?.summary || "") : (selectedSession?.transcript || ""))} 
-                      className="rounded-full gap-2"
+                      className="rounded-full gap-2 h-9"
                     >
                       {copied ? <Check size={16} /> : <Copy size={16} />}
-                      {t.copy}
+                      <span className="hidden sm:inline">{t.copy}</span>
                     </Button>
                     <Button 
                       variant="outline" 
                       size="sm" 
-                      className="rounded-full gap-2"
+                      className="rounded-full gap-2 h-9"
                       onClick={() => selectedSession && handleExport(selectedSession)}
                     >
                       <Download size={16} />
-                      {t.export}
+                      <span className="hidden sm:inline">{t.export}</span>
                     </Button>
                     <Button 
                       variant="outline" 
                       size="sm" 
-                      className="rounded-full gap-2 text-red-500 hover:text-red-600"
+                      className="rounded-full gap-2 h-9 text-red-500 hover:text-red-600"
                       onClick={() => selectedSession && deleteSession(selectedSession.id)}
                     >
                       <Trash2 size={16} />
@@ -630,13 +739,13 @@ export default function MinutesAgent({ settings }: MinutesAgentProps) {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 gap-8">
-                  <div className="space-y-6">
+                <div className="grid grid-cols-1 gap-6 md:gap-8">
+                  <div className="space-y-4 md:space-y-6">
                     <div className="flex p-1 bg-muted rounded-xl w-fit">
                       <button 
                         onClick={() => setActiveResultTab('summary')}
                         className={cn(
-                          "px-4 py-1.5 text-sm font-medium rounded-lg transition-all",
+                          "px-3 md:px-4 py-1.5 text-xs md:text-sm font-medium rounded-lg transition-all",
                           activeResultTab === 'summary' ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
                         )}
                       >
@@ -645,7 +754,7 @@ export default function MinutesAgent({ settings }: MinutesAgentProps) {
                       <button 
                         onClick={() => setActiveResultTab('transcript')}
                         className={cn(
-                          "px-4 py-1.5 text-sm font-medium rounded-lg transition-all",
+                          "px-3 md:px-4 py-1.5 text-xs md:text-sm font-medium rounded-lg transition-all",
                           activeResultTab === 'transcript' ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
                         )}
                       >
@@ -653,13 +762,13 @@ export default function MinutesAgent({ settings }: MinutesAgentProps) {
                       </button>
                     </div>
 
-                    <Card className="p-4 md:p-8 border-none bg-white dark:bg-[#1C1C1E] rounded-[32px] shadow-sm">
-                      <div className="flex items-center gap-2 mb-6 text-primary font-bold">
+                    <Card className="p-4 md:p-8 border-none bg-white dark:bg-[#1C1C1E] rounded-[24px] md:rounded-[32px] shadow-sm">
+                      <div className="flex items-center gap-2 mb-4 md:mb-6 text-primary font-bold">
                         {activeResultTab === 'summary' ? <FileText size={20} /> : <Volume2 size={20} />}
-                        <span className="text-lg">{activeResultTab === 'summary' ? t.smartMinutes : t.rawTranscript}</span>
+                        <span className="text-base md:text-lg">{activeResultTab === 'summary' ? t.smartMinutes : t.rawTranscript}</span>
                       </div>
                       <div className="prose prose-sm md:prose-base dark:prose-invert max-w-none">
-                        <div className="leading-relaxed whitespace-pre-wrap">
+                        <div className="leading-relaxed text-sm md:text-lg whitespace-pre-wrap">
                           {activeResultTab === 'summary' ? (
                             <ReactMarkdown>{selectedSession?.summary || ""}</ReactMarkdown>
                           ) : (
@@ -674,7 +783,7 @@ export default function MinutesAgent({ settings }: MinutesAgentProps) {
                         setStatus('idle');
                         setSelectedSession(null);
                       }}
-                      className="w-full rounded-full h-12 text-base font-bold"
+                      className="w-full rounded-full h-12 md:h-14 text-base md:text-lg font-bold"
                     >
                       {t.startNewRecord}
                     </Button>

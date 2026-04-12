@@ -8,11 +8,12 @@ export default defineConfig(({mode}) => {
   return {
     plugins: [react(), tailwindcss()],
     build: {
+      outDir: 'dist',
       chunkSizeWarningLimit: 2000,
       rollupOptions: {
         output: {
           manualChunks: {
-            'vendor': ['react', 'react-dom', 'motion/react', 'lucide-react'],
+            'vendor': ['react', 'react-dom', 'motion', 'lucide-react'],
           }
         }
       }

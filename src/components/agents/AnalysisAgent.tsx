@@ -14,7 +14,8 @@ import {
   FileDown,
   Sparkles,
   History,
-  RefreshCw
+  RefreshCw,
+  Play
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -246,7 +247,13 @@ export default function AnalysisAgent({ settings }: AnalysisAgentProps) {
           const chunkText = chunk.text;
           if (chunkText) {
             fullResult += chunkText;
-            setAnalysisResult(fullResult);
+            // Clean result: remove ** and signatures
+            const cleanedResult = fullResult
+              .replace(/\*\*/g, '')
+              .replace(/报告撰写：\s*数据分析专家/g, '')
+              .replace(/日期：\s*\d{4}年\d{1,2}月\d{1,2}日/g, '')
+              .trim();
+            setAnalysisResult(cleanedResult);
           }
         }
       } catch (streamError: any) {
@@ -290,19 +297,19 @@ export default function AnalysisAgent({ settings }: AnalysisAgentProps) {
     }>
       <div className="flex flex-col h-full">
       {/* Top Bar */}
-      <div className="flex flex-col sm:flex-row items-center justify-between px-4 md:px-8 py-3 md:py-4 border-b bg-card/50 backdrop-blur-md sticky top-0 z-10 gap-3 md:pl-8 pl-14">
-        <div className="flex items-center gap-4 w-full sm:w-auto overflow-x-auto pb-1 sm:pb-0 scrollbar-hide">
-          <div className="flex items-center gap-2 shrink-0 mr-2">
-            <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center text-white shadow-sm">
-              <Sparkles size={18} />
+      <div className="flex items-center justify-between px-2 md:px-8 py-2 md:py-4 border-b bg-card/50 backdrop-blur-md sticky top-0 z-10 gap-2 h-[64px]">
+        <div className="flex items-center gap-1.5 md:gap-4 overflow-x-auto scrollbar-hide flex-1">
+          <div className="flex items-center gap-1 md:gap-2 shrink-0 ml-12 md:ml-0">
+            <div className="w-7 h-7 md:w-8 md:h-8 rounded-lg bg-primary hidden md:flex items-center justify-center text-white shadow-sm">
+              <Sparkles size={16} />
             </div>
-            <span className="font-bold text-lg tracking-tight">{t.analysis}</span>
+            <span className="font-bold text-sm md:text-lg tracking-tight">{t.analysis}</span>
           </div>
-          <div className="flex p-1 bg-muted rounded-xl shrink-0">
+          <div className="flex p-0.5 bg-muted rounded-lg md:rounded-xl shrink-0">
             <button 
               onClick={() => setActiveTab('upload')}
               className={cn(
-                "px-3 md:px-4 py-1.5 text-xs md:text-sm font-medium rounded-lg transition-all whitespace-nowrap",
+                "px-1.5 md:px-4 py-1 md:py-1.5 text-[10px] md:text-sm font-medium rounded-md md:rounded-lg transition-all whitespace-nowrap",
                 activeTab === 'upload' ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
               )}
             >
@@ -311,7 +318,7 @@ export default function AnalysisAgent({ settings }: AnalysisAgentProps) {
             <button 
               onClick={() => setActiveTab('result')}
               className={cn(
-                "px-3 md:px-4 py-1.5 text-xs md:text-sm font-medium rounded-lg transition-all whitespace-nowrap",
+                "px-1.5 md:px-4 py-1 md:py-1.5 text-[10px] md:text-sm font-medium rounded-md md:rounded-lg transition-all whitespace-nowrap",
                 activeTab === 'result' ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
               )}
             >
@@ -320,7 +327,7 @@ export default function AnalysisAgent({ settings }: AnalysisAgentProps) {
             <button 
               onClick={() => setActiveTab('history')}
               className={cn(
-                "px-3 md:px-4 py-1.5 text-xs md:text-sm font-medium rounded-lg transition-all whitespace-nowrap",
+                "px-1.5 md:px-4 py-1 md:py-1.5 text-[10px] md:text-sm font-medium rounded-md md:rounded-lg transition-all whitespace-nowrap",
                 activeTab === 'history' ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
               )}
             >
@@ -328,24 +335,23 @@ export default function AnalysisAgent({ settings }: AnalysisAgentProps) {
             </button>
           </div>
         </div>
-        <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+        <div className="flex items-center gap-1 shrink-0">
           <Button 
             variant="ghost" 
             size="icon" 
             onClick={handleRefresh} 
-            className={cn("rounded-xl h-9 w-9 md:h-10 md:w-10", isRefreshing && "animate-spin")}
+            className={cn("rounded-lg h-8 w-8 md:h-10 md:w-10", isRefreshing && "animate-spin")}
             title={t.refresh}
           >
-            <RefreshCw size={18} />
+            <RefreshCw size={14} />
           </Button>
           <Button 
             onClick={handleAnalyze} 
             disabled={isProcessing || (files.length === 0 && !link)}
-            className="rounded-xl shadow-lg shadow-primary/20 h-9 md:h-10 px-3 md:px-4"
+            className="rounded-lg shadow-lg shadow-primary/20 h-8 w-8 md:h-10 md:w-10 p-0"
+            title={t.startAnalyze}
           >
-            {isProcessing && <Loader2 className="md:mr-2 h-4 w-4 animate-spin" />}
-            <span className="hidden md:inline">{isProcessing ? t.analyzing : t.startAnalyze}</span>
-            <span className="md:hidden text-xs">{isProcessing ? '' : t.startAnalyze}</span>
+            {isProcessing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play size={16} className="fill-current" />}
           </Button>
         </div>
       </div>
@@ -487,7 +493,7 @@ export default function AnalysisAgent({ settings }: AnalysisAgentProps) {
                             </div>
                           </div>
                         ) : (
-                          <div className="prose prose-blue dark:prose-invert max-w-none">
+                          <div className="prose prose-sm md:prose-base prose-blue dark:prose-invert max-w-none">
                             <ReactMarkdown remarkPlugins={[remarkGfm]}>{analysisResult || ''}</ReactMarkdown>
                             {isProcessing && (
                               <div className="flex items-center gap-2 mt-4 text-primary animate-pulse">

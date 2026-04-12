@@ -1,5 +1,7 @@
 {
   "name": "Cookie",
-  "description": "A cross-file multi-modal analysis and visualization platform featuring dual-agent architecture for vertical file analysis and general Q&A.",
-  "requestFramePermissions": ["microphone"]
+  "description": "一款跨文件多模态分析与可视化平台，采用双智能体架构，专注垂直文件解析与通用问答；内置会议纪要功能，支持录音转写、智能提炼、说话人识别，可生成结构化纪要并导出，实现会议内容高效沉淀与复用。",
+  "requestFramePermissions": [
+    "microphone"
+  ]
 }

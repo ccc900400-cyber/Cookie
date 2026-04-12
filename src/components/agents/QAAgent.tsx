@@ -228,12 +228,12 @@ export default function QAAgent({ settings }: QAAgentProps) {
   return (
     <div className="flex flex-col h-full bg-[#F8F9FA] dark:bg-[#000000] overflow-hidden">
       {/* Top Navigation Bar */}
-      <div className="h-16 border-b bg-white/80 dark:bg-black/80 backdrop-blur-md flex items-center justify-between px-6 shrink-0 z-10">
+      <div className="h-16 border-b bg-white/80 dark:bg-black/80 backdrop-blur-md flex items-center justify-between px-2 md:px-8 shrink-0 z-10 h-[64px]">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-[#007AFF] flex items-center justify-center text-white">
+          <div className="w-8 h-8 rounded-lg bg-[#007AFF] hidden md:flex items-center justify-center text-white">
             <MessageSquare size={18} />
           </div>
-          <h1 className="font-bold text-lg tracking-tight">{t.qa}</h1>
+          <h1 className="font-bold text-lg tracking-tight ml-12 md:ml-0">{t.qa}</h1>
           <Badge variant="secondary" className="text-[10px] px-1.5 py-0 ml-2">Gemini 3 Flash</Badge>
         </div>
         <div className="flex items-center gap-2">
@@ -303,7 +303,7 @@ export default function QAAgent({ settings }: QAAgentProps) {
                     : "bg-[#E9E9EB] dark:bg-[#3A3A3C] text-black dark:text-white rounded-[20px] rounded-tl-[4px]"
                 )}>
                   <div className={cn(
-                    "prose prose-sm max-w-none",
+                    "prose prose-sm md:prose-base max-w-none",
                     message.role === 'user' ? "prose-invert text-white" : "dark:prose-invert"
                   )}>
                     <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>
