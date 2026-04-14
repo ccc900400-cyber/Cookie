@@ -1,7 +1,0 @@
-{
-  "name": "Cookie",
-  "integrations": {
-    "capacitor": {}
-  },
-  "type": "react"
-}
