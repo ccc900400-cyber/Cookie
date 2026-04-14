@@ -8,7 +8,10 @@
     "build": "NO_UPDATE_NOTIFIER=true vite build --logLevel info",
     "preview": "vite preview",
     "clean": "rm -rf dist",
-    "lint": "NO_UPDATE_NOTIFIER=true npm_config_loglevel=silent tsc --noEmit"
+    "lint": "NO_UPDATE_NOTIFIER=true npm_config_loglevel=silent tsc --noEmit",
+    "cap:sync": "npx cap sync",
+    "cap:open:android": "npx cap open android",
+    "cap:build:android": "npm run build && npx cap sync && cd android && ./gradlew assembleDebug"
   },
   "dependencies": {
     "@base-ui/react": "^1.3.0",
