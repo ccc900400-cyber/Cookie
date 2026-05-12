@@ -56,7 +56,10 @@ export default function QAAgent({ settings }: QAAgentProps) {
     const fetchHotSuggestions = async (force = false) => {
       try {
         const now = new Date();
-        const todayStr = now.toISOString().split('T')[0];
+        // Adjust to China Standard Time (UTC+8)
+        const chinaTime = new Date(now.getTime() + (now.getTimezoneOffset() + 480) * 60000);
+        const year = chinaTime.getFullYear();
+        const todayStr = `${chinaTime.getFullYear()}-${String(chinaTime.getMonth() + 1).padStart(2, '0')}-${String(chinaTime.getDate()).padStart(2, '0')}`;
         
         if (!force) {
           const cached = localStorage.getItem(`hot_suggestions_${settings.language}`);
@@ -69,15 +72,15 @@ export default function QAAgent({ settings }: QAAgentProps) {
         }
 
         setIsFetchingSuggestions(true);
-        const prompt = `请提供4个当前2027年中国大陆的实时热门话题或人们今天在搜的热点。
+        const prompt = `请提供4个当前${year}年中国大陆的实时热门话题或人们今天在搜的热点。
         要求：
-        1. 必须是2027年中国大陆真实发生或备受关注的热点。
+        1. 必须是${year}年中国大陆真实发生或备受关注的热点。
         2. 语言使用${settings.language === 'en' ? '英文' : settings.language === 'zh-TW' ? '繁体中文' : '简体中文'}。
         3. 每个话题极其简短（不超过15个字）。
-        4. 以纯JSON数组格式返回，例如：["2027热点1", "2027热点2", "2027热点3", "2027热点4"]。
+        4. 以纯JSON数组格式返回，例如：["${year}热点1", "${year}热点2", "${year}热点3", "${year}热点4"]。
         5. 不要包含任何Markdown格式或额外文字。`;
         
-        const response = await geminiService.chat([{ role: 'user', parts: [{ text: prompt }] }], "你是一个专门提供2027年中国大陆实时热点信息的助手。");
+        const response = await geminiService.chat([{ role: 'user', parts: [{ text: prompt }] }], `你是一个专门提供${year}年中国大陆实时热点信息的助手。`);
         const cleanResponse = response.replace(/```json|```/g, '').trim();
         const suggestions = JSON.parse(cleanResponse);
         
@@ -118,18 +121,21 @@ export default function QAAgent({ settings }: QAAgentProps) {
     const fetchHotSuggestionsInternal = async () => {
       try {
         const now = new Date();
-        const todayStr = now.toISOString().split('T')[0];
+        // Adjust to China Standard Time (UTC+8)
+        const chinaTime = new Date(now.getTime() + (now.getTimezoneOffset() + 480) * 60000);
+        const year = chinaTime.getFullYear();
+        const todayStr = `${chinaTime.getFullYear()}-${String(chinaTime.getMonth() + 1).padStart(2, '0')}-${String(chinaTime.getDate()).padStart(2, '0')}`;
         
         setIsFetchingSuggestions(true);
-        const prompt = `请提供4个当前2027年中国大陆的实时热门话题或人们今天在搜的热点。
+        const prompt = `请提供4个当前${year}年中国大陆的实时热门话题或人们今天在搜的热点。
         要求：
-        1. 必须是2027年中国大陆真实发生或备受关注的热点。
+        1. 必须是${year}年中国大陆真实发生或备受关注的热点。
         2. 语言使用${settings.language === 'en' ? '英文' : settings.language === 'zh-TW' ? '繁体中文' : '简体中文'}。
         3. 每个话题极其简短（不超过15个字）。
-        4. 以纯JSON数组格式返回，例如：["2027热点1", "2027热点2", "2027热点3", "2027热点4"]。
+        4. 以纯JSON数组格式返回，例如：["${year}热点1", "${year}热点2", "${year}热点3", "${year}热点4"]。
         5. 不要包含任何Markdown格式或额外文字。`;
         
-        const response = await geminiService.chat([{ role: 'user', parts: [{ text: prompt }] }], "你是一个专门提供2027年中国大陆实时热点信息的助手。");
+        const response = await geminiService.chat([{ role: 'user', parts: [{ text: prompt }] }], `你是一个专门提供${year}年中国大陆实时热点信息的助手。`);
         const cleanResponse = response.replace(/```json|```/g, '').trim();
         const suggestions = JSON.parse(cleanResponse);
         
@@ -183,7 +189,21 @@ export default function QAAgent({ settings }: QAAgentProps) {
       
       history.push({ role: 'user', parts: [{ text: input }] });
 
+      const now = new Date();
+      const formatter = new Intl.DateTimeFormat('zh-CN', {
+        timeZone: 'Asia/Shanghai',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false
+      });
+      const chinaTimeStr = formatter.format(now);
+
       const systemInstruction = `${t.qaSystem} 
+      Today is ${chinaTimeStr} (China Standard Time). 
+      IMPORTANT: Provide direct answers. DO NOT mention that you are an AI, and DO NOT explain that your "real-time" perception is based on system settings or macro trends. Simply respond as if you are currently in ${chinaTimeStr}.
       Respond in ${settings.language === 'en' ? 'English' : settings.language === 'zh-TW' ? 'Traditional Chinese' : 'Simplified Chinese'}.`;
 
       const stream = await geminiService.chatStream(history, systemInstruction);
@@ -344,7 +364,6 @@ export default function QAAgent({ settings }: QAAgentProps) {
               </div>
             </div>
           )}
-          <div ref={scrollRef} />
         </div>
       </ScrollArea>
 

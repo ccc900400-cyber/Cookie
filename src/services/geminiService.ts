@@ -56,6 +56,28 @@ export const geminiService = {
     });
   },
 
+  async fetchLinkContent(url: string) {
+    try {
+      const response = await fetch('/api/fetch-link', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ url }),
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch link content');
+      }
+      
+      const data = await response.json();
+      return data.content;
+    } catch (error) {
+      console.error('[GeminiService] Fetch link error:', error);
+      throw error;
+    }
+  },
+
   async analyzeFile(file: File, prompt: string) {
     // Convert file to base64
     const base64Data = await new Promise<string>((resolve) => {
@@ -115,10 +137,12 @@ export const geminiService = {
     });
   },
 
-  async analyzeLargeFilesStream(files: File[], prompt: string, systemInstruction: string, language: string, link?: string, useSearch?: boolean) {
+  async analyzeLargeFilesStream(files: File[], prompt: string, systemInstruction: string, language: string, link?: string, useSearch?: boolean, fetchedContent?: string) {
     const parts: any[] = [{ text: prompt }];
     
-    if (link) {
+    if (fetchedContent) {
+      parts[0].text += `\n\nAnalyzed Content from Link:\n${fetchedContent}`;
+    } else if (link) {
       parts[0].text += `\n\nLink to analyze: ${link}`;
     }
 

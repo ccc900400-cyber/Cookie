@@ -58,6 +58,7 @@ export default function MinutesAgent({ settings }: MinutesAgentProps) {
   const streamRef = useRef<MediaStream | null>(null);
   const recordingTimeRef = useRef(0);
   const maxVolumeRef = useRef(0);
+  const processingCancelledRef = useRef(false);
 
   const workflow = t.minutesWorkflow;
 
@@ -194,6 +195,14 @@ export default function MinutesAgent({ settings }: MinutesAgentProps) {
         };
 
         mediaRecorder.onstop = async () => {
+          if (processingCancelledRef.current) {
+            console.log("Recording cancelled, skipping processing");
+            setIsRecording(false);
+            setStatus('idle');
+            cleanupAudio();
+            return;
+          }
+          
           const blob = new Blob(audioChunksRef.current, { type: mimeType });
           setAudioBlob(blob);
           
@@ -225,6 +234,7 @@ export default function MinutesAgent({ settings }: MinutesAgentProps) {
 
   const stopRecording = () => {
     setIsRecording(false);
+    processingCancelledRef.current = false;
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
       mediaRecorderRef.current.stop();
     }
@@ -234,6 +244,7 @@ export default function MinutesAgent({ settings }: MinutesAgentProps) {
   const handleCancelRecording = () => {
     setIsRecording(false);
     setStatus('idle');
+    processingCancelledRef.current = true;
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
       mediaRecorderRef.current.stop();
     }
@@ -255,6 +266,7 @@ export default function MinutesAgent({ settings }: MinutesAgentProps) {
 
   const processAudio = async (blob: Blob) => {
     setStatus('processing');
+    processingCancelledRef.current = false;
     try {
       // Convert blob to base64
       const reader = new FileReader();
@@ -267,8 +279,20 @@ export default function MinutesAgent({ settings }: MinutesAgentProps) {
       reader.readAsDataURL(blob);
       const base64Data = await base64Promise;
 
-      // Call Gemini for transcription and summarization
-      const response = await ai.models.generateContent({
+      const now = new Date();
+      const formatter = new Intl.DateTimeFormat('zh-CN', {
+        timeZone: 'Asia/Shanghai',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false
+      });
+      const chinaTimeStr = formatter.format(now);
+
+      // Call Gemini for transcription and summarization with streaming
+      const stream = await ai.models.generateContentStream({
         model: "gemini-3-flash-preview",
         contents: [
           {
@@ -280,38 +304,66 @@ export default function MinutesAgent({ settings }: MinutesAgentProps) {
                 }
               },
               {
-                text: "请作为一名专业的会议记录员，对这段音频进行深度分析。你的任务包括：\n\n1. 完整转录：将音频内容完整转录为文字，并尽可能区分不同的发言人（如：发言人1、发言人2等）。\n2. 智能摘要：基于转录内容，生成一份结构化、专业且易于阅读的会议纪要。纪要应包含：\n   - 会议主题：简明扼要地概括会议核心内容。\n   - 核心观点：列出各发言人的主要论点和贡献。\n   - 结论与共识：总结会议达成的最终决定或共识。\n   - 待办事项：清晰列出后续行动项，并注明负责人（如果提及）和截止日期。\n\n请严格按照以下格式输出：\n\n[TRANSCRIPT]\n(此处为带发言人区分的完整转录文字)\n\n[SUMMARY]\n(此处为结构化会议纪要)\n\n注意：输出内容中严禁使用双星号（**）进行加粗。如果音频中没有任何人说话或者只有噪音，请只回复：'未检测到有效语音内容，无法生成纪要。'"
+                text: `请作为一名专业的会议记录员，对这段音频进行深度分析。今天日期和时间是 ${chinaTimeStr}（北京时间）。\n\n你的任务包括：\n\n1. 完整转录：将音频内容完整转录为文字，并尽可能区分不同的发言人（如：发言人1、发言人2等）。\n2. 智能摘要：基于转录内容，生成一份结构化、专业且易于阅读的会议纪要。纪要应包含：\n   - 会议主题：简明扼要地概括会议核心内容。\n   - 核心观点：列出各发言人的主要论点和贡献。\n   - 结论与共识：总结会议达成的最终决定或共识。\n   - 待办事项：清晰列出后续行动项，并注明负责人（如果提及）和截止日期。\n\n请严格按照以下格式输出：\n\n[TRANSCRIPT]\n(此处为带发言人区分的完整转录文字)\n\n[SUMMARY]\n(此处为结构化会议纪要)\n\n注意：\n- 严禁使用双星号（**）进行加粗。\n- 直接输出结果，不要提及你是人工智能，不要解释你的感知基于系统设定。\n- 如果音频中没有任何人说话或者只有噪音，请只回复：'未检测到有效语音内容，无法生成纪要。'`
               }
             ]
           }
         ]
       });
 
-      let resultText = response.text || t.error;
-      
-      // Remove any double asterisks from the result
-      resultText = resultText.replace(/\*\*/g, '');
-      
-      if (resultText.includes("未检测到有效语音内容")) {
-        alert(t.noSpeechError);
-        setStatus('idle');
-        return;
+      let resultText = "";
+      for await (const chunk of stream) {
+        if (processingCancelledRef.current) {
+          console.log("Processing cancelled by user");
+          setStatus('idle');
+          return;
+        }
+        const chunkText = chunk.text;
+        resultText += chunkText;
+        
+        // Remove any double asterisks from the partial result
+        const cleanText = resultText.replace(/\*\*/g, '');
+        
+        if (cleanText.includes("未检测到有效语音内容")) {
+          alert(t.noSpeechError);
+          setStatus('idle');
+          return;
+        }
+
+        // Live update summary and transcript if tags are present
+        if (cleanText.includes("[TRANSCRIPT]") && cleanText.includes("[SUMMARY]")) {
+           const transcriptPart = cleanText.split("[TRANSCRIPT]")[1]?.split("[SUMMARY]")[0]?.trim() || "";
+           const summaryPart = cleanText.split("[SUMMARY]")[1]?.trim() || "";
+           setTranscript(transcriptPart);
+           setSummary(summaryPart || "正在生成纪要...");
+        } else if (cleanText.includes("[TRANSCRIPT]")) {
+           const transcriptPart = cleanText.split("[TRANSCRIPT]")[1]?.trim() || "";
+           setTranscript(transcriptPart);
+           setSummary("正在生成纪要...");
+        } else {
+           setSummary(cleanText);
+        }
       }
 
+      const finalResult = resultText.replace(/\*\*/g, '');
+      if (processingCancelledRef.current) return;
+      
       let finalTranscript = "";
       let finalSummary = "";
 
-      if (resultText.includes("[TRANSCRIPT]") && resultText.includes("[SUMMARY]")) {
-        finalTranscript = resultText.split("[TRANSCRIPT]")[1].split("[SUMMARY]")[0].trim();
-        finalSummary = resultText.split("[SUMMARY]")[1].trim();
+      if (finalResult.includes("[TRANSCRIPT]") && finalResult.includes("[SUMMARY]")) {
+        finalTranscript = finalResult.split("[TRANSCRIPT]")[1].split("[SUMMARY]")[0].trim();
+        finalSummary = finalResult.split("[SUMMARY]")[1].trim();
       } else {
-        finalSummary = resultText;
+        finalSummary = finalResult;
         finalTranscript = "未能提取原始转录。";
       }
 
       setTranscript(finalTranscript);
       setSummary(finalSummary);
       
+      if (processingCancelledRef.current) return;
+
       // Save to history
       const newSession: RecordingSession = {
         id: Date.now().toString(),
@@ -327,6 +379,7 @@ export default function MinutesAgent({ settings }: MinutesAgentProps) {
       setSelectedSession(newSession);
       setStatus('completed');
     } catch (error) {
+      if (processingCancelledRef.current) return;
       console.error("Processing error:", error);
       alert(t.processingError);
       setStatus('idle');
@@ -649,15 +702,42 @@ export default function MinutesAgent({ settings }: MinutesAgentProps) {
                     </p>
                   </div>
 
-                  {status === 'recording' && (
+                  {status === 'processing' && (transcript || summary) && (
+                    <div className="w-full max-w-4xl mx-auto px-4 mt-8">
+                       <Card className="p-4 md:p-8 border-none bg-white dark:bg-[#1C1C1E] rounded-[24px] shadow-sm text-left">
+                          <div className="prose prose-sm md:prose-base dark:prose-invert max-w-none">
+                            {summary && (
+                              <div className="mb-6">
+                                <h4 className="text-primary font-bold mb-2 flex items-center gap-2">
+                                  <FileText size={16} /> {t.smartMinutes}
+                                </h4>
+                                <div className="leading-relaxed whitespace-pre-wrap"><ReactMarkdown>{summary}</ReactMarkdown></div>
+                              </div>
+                            )}
+                            {transcript && (
+                              <div>
+                                <h4 className="text-primary font-bold mb-2 flex items-center gap-2">
+                                  <Volume2 size={16} /> {t.rawTranscript}
+                                </h4>
+                                <div className="leading-relaxed whitespace-pre-wrap text-sm opacity-70">{transcript}</div>
+                              </div>
+                            )}
+                          </div>
+                       </Card>
+                    </div>
+                  )}
+
+                  {(status === 'recording' || status === 'processing') && (
                     <div className="flex flex-col md:flex-row gap-4 justify-center">
-                      <Button 
-                        onClick={toggleRecording}
-                        className="rounded-full h-16 md:h-20 px-8 md:px-12 text-lg md:text-xl font-bold shadow-2xl shadow-primary/20 gap-3 md:gap-4 hover:scale-105 transition-transform"
-                      >
-                        <StopCircle size={28} className="md:w-8 md:h-8" />
-                        {t.stopAndGenerate}
-                      </Button>
+                      {status === 'recording' && (
+                        <Button 
+                          onClick={toggleRecording}
+                          className="rounded-full h-16 md:h-20 px-8 md:px-12 text-lg md:text-xl font-bold shadow-2xl shadow-primary/20 gap-3 md:gap-4 hover:scale-105 transition-transform"
+                        >
+                          <StopCircle size={28} className="md:w-8 md:h-8" />
+                          {t.stopAndGenerate}
+                        </Button>
+                      )}
                       <Button 
                         onClick={handleCancelRecording}
                         variant="outline"

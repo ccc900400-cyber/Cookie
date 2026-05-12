@@ -46,6 +46,11 @@ export const storageService = {
     return db.clear(STORE_ANALYSIS);
   },
 
+  async deleteAnalysis(id: string) {
+    const db = await getDB();
+    return db.delete(STORE_ANALYSIS, id);
+  },
+
   // Chat History
   async saveChatMessage(message: any) {
     const db = await getDB();

@@ -212,49 +212,33 @@ export default function App() {
 
         {/* Main Content */}
         <main className="flex-1 flex flex-col relative overflow-hidden bg-background/50 backdrop-blur-sm">
+          {/* Settings Panel is still conditionally rendered as it's an overlay/full screen modal-like state */}
           <AnimatePresence mode="wait">
-            {showSettings ? (
+            {showSettings && (
               <motion.div
                 key="settings"
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -10 }}
-                className="h-full w-full"
+                className="h-full w-full absolute inset-0 z-20 bg-background"
               >
                 <SettingsPanel settings={settings} setSettings={setSettings} />
               </motion.div>
-            ) : activeAgent === 'analysis' ? (
-              <motion.div
-                key="analysis"
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -20 }}
-                className="h-full w-full"
-              >
-                <AnalysisAgent settings={settings} />
-              </motion.div>
-            ) : activeAgent === 'minutes' ? (
-              <motion.div
-                key="minutes"
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -20 }}
-                className="h-full w-full"
-              >
-                <MinutesAgent settings={settings} />
-              </motion.div>
-            ) : (
-              <motion.div
-                key="qa"
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -20 }}
-                className="h-full w-full"
-              >
-                <QAAgent settings={settings} />
-              </motion.div>
             )}
           </AnimatePresence>
+
+          {/* Agents are always mounted but hidden to support background tasks */}
+          <div className={cn("h-full w-full", (activeAgent !== 'analysis' || showSettings) && "hidden invisible pointer-events-none")}>
+            <AnalysisAgent settings={settings} />
+          </div>
+          
+          <div className={cn("h-full w-full", (activeAgent !== 'minutes' || showSettings) && "hidden invisible pointer-events-none")}>
+            <MinutesAgent settings={settings} />
+          </div>
+          
+          <div className={cn("h-full w-full", (activeAgent !== 'qa' || showSettings) && "hidden invisible pointer-events-none")}>
+            <QAAgent settings={settings} />
+          </div>
         </main>
       </div>
     </TooltipProvider>

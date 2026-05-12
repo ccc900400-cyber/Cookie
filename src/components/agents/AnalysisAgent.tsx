@@ -15,7 +15,8 @@ import {
   Sparkles,
   History,
   RefreshCw,
-  Play
+  Play,
+  Trash2
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -214,29 +215,86 @@ export default function AnalysisAgent({ settings }: AnalysisAgentProps) {
     setFiles(prev => prev.filter(f => f.id !== id));
   };
 
+  const deleteHistoryItem = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      await storageService.deleteAnalysis(id);
+      setHistory(prev => prev.filter(item => item.id !== id));
+    } catch (err) {
+      console.error("Failed to delete history item:", err);
+    }
+  };
+
   const handleAnalyze = async () => {
     if (files.length === 0 && !link) return;
     
+    let trimmedLink = link.trim();
+    if (trimmedLink && !/^https?:\/\//i.test(trimmedLink)) {
+      trimmedLink = 'https://' + trimmedLink;
+    }
+    
+    // Validate URL if link is provided and no files
+    if (files.length === 0 && trimmedLink) {
+      try {
+        // Basic domain validation + URL constructor check
+        const url = new URL(trimmedLink);
+        if (!url.hostname.includes('.')) throw new Error('Invalid domain');
+      } catch (e) {
+        setAnalysisResult(t.invalidUrl);
+        setActiveTab('result');
+        return;
+      }
+    }
+
+    const currentFiles = [...files];
+    const currentLink = trimmedLink;
+
     setIsProcessing(true);
     setActiveTab('result');
     setAnalysisResult(""); 
     setProgress(t.analyzing);
 
+    // Clear inputs immediately
+    setFiles([]);
+    setLink('');
+
     try {
+      const now = new Date();
+      const formatter = new Intl.DateTimeFormat('zh-CN', {
+        timeZone: 'Asia/Shanghai',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false
+      });
+      const chinaTimeStr = formatter.format(now);
+      
       const prompt = t.analysisPrompt;
-      const systemInstruction = t.analysisSystem;
+      const systemInstruction = t.analysisSystem + ` Today is ${chinaTimeStr} (China Standard Time). IMPORTANT: Provide direct analysis. DO NOT mention that you are an AI, and DO NOT explain that your time perception is based on system settings.`;
       const language = settings.language === 'en' ? 'English' : settings.language === 'zh-TW' ? 'Traditional Chinese' : 'Simplified Chinese';
       
       let stream;
-      if (files.length > 0) {
+      if (currentFiles.length > 0) {
         setProgress(t.analyzing);
         
-        const rawFiles = files.map(f => f.file).filter((f): f is File => !!f);
+        const rawFiles = currentFiles.map(f => f.file).filter((f): f is File => !!f);
         stream = await geminiService.analyzeLargeFilesStream(rawFiles, prompt, systemInstruction, language);
-      } else {
+      } else if (currentLink) {
         setProgress(t.fetchingLink);
-        // Use server for link analysis to keep API key hidden
-        stream = await geminiService.analyzeLargeFilesStream([], prompt, systemInstruction, language, link, true);
+        try {
+          const fetchedContent = await geminiService.fetchLinkContent(currentLink);
+          setProgress(t.analyzing);
+          stream = await geminiService.analyzeLargeFilesStream([], prompt, systemInstruction, language, currentLink, true, fetchedContent);
+        } catch (fetchError) {
+          console.warn('[AnalysisAgent] Fetch failed, falling back to search:', fetchError);
+          setProgress(t.analyzing);
+          stream = await geminiService.analyzeLargeFilesStream([], prompt, systemInstruction, language, currentLink, true);
+        }
+      } else {
+        setIsProcessing(false);
+        return;
       }
 
       let fullResult = "";
@@ -265,9 +323,9 @@ export default function AnalysisAgent({ settings }: AnalysisAgentProps) {
       // Add to history
       const newHistoryItem = {
         id: Date.now().toString(),
-        name: files.length > 0 ? files.map(f => f.name).join(', ') : link,
+        name: currentFiles.length > 0 ? currentFiles.map(f => f.name).join(', ') : currentLink,
         date: new Date().toLocaleString(),
-        type: files.length > 0 ? (files[0].type.includes('video') ? 'Video' : 'File') : 'Link',
+        type: currentFiles.length > 0 ? (currentFiles[0].type.includes('video') ? 'Video' : 'File') : 'Link',
         status: t.completed,
         // No longer truncating result as IndexedDB can handle large data
         result: fullResult || t.noResponse
@@ -553,8 +611,13 @@ export default function AnalysisAgent({ settings }: AnalysisAgentProps) {
                         </div>
                         <div className="flex items-center gap-4">
                           <Badge variant="outline" className="text-[10px]">{item.status}</Badge>
-                          <Button variant="ghost" size="icon" className="rounded-lg">
-                            <Download size={16} />
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            className="rounded-lg h-8 w-8 hover:bg-destructive/10 hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
+                            onClick={(e) => deleteHistoryItem(item.id, e)}
+                          >
+                            <Trash2 size={14} />
                           </Button>
                         </div>
                       </div>
